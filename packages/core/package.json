@@ -1,0 +1,9 @@
+{
+  "name": "@serion/core",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "vite build"
+  }
+}

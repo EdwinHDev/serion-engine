@@ -1,0 +1,61 @@
+/**
+ * Serion Deep Dark - Theme System
+ * Based on Unreal Engine 5 Aesthetics
+ */
+
+:root {
+  /* Colors */
+  --serion-bg-0: #0F0F0F;
+  /* Base background */
+  --serion-bg-1: #161616;
+  /* Panels and Sidebar */
+  --serion-bg-2: #262626;
+  /* Panel headers and buttons */
+  --serion-border: #2B2B2B;
+  /* Subtle separators */
+  --serion-accent: #0070FF;
+  /* Unreal Blue */
+  --serion-accent-hover: #1A80FF;
+  --serion-text-main: #CCCCCC;
+  /* Primary text */
+  --serion-text-dim: #888888;
+  /* Labels and descriptions */
+
+  /* Selection & Interactive */
+  --serion-asset-selected: rgba(0, 112, 255, 0.3);
+  --serion-asset-selected-border: #0070FF;
+  --serion-splitter-width: 4px;
+  --serion-splitter-hover: var(--serion-accent);
+
+  /* Dimensions */
+  --serion-toolbar-height: 48px;
+  --serion-statusbar-height: 24px;
+  --serion-sidebar-width: 350px;
+  --serion-footer-height: 250px;
+
+  /* Typography */
+  --serion-font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --serion-font-size-base: 12px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--serion-bg-0);
+  color: var(--serion-text-main);
+  font-family: var(--serion-font-family);
+  font-size: var(--serion-font-size-base);
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.col-resize {
+  cursor: col-resize;
+}
+
+.row-resize {
+  cursor: row-resize;
+}

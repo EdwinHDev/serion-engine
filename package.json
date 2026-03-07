@@ -1,0 +1,17 @@
+{
+  "name": "serion-engine",
+  "private": true,
+  "description": "Professional Web-based 3D Game Engine",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:editor": "npm run dev --workspace=@serion/editor",
+    "build:core": "npm run build --workspace=@serion/core",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}
