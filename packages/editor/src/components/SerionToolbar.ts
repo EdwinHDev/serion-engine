@@ -1,6 +1,6 @@
 /**
  * SerionToolbar Component
- * Encapsulates the top tools and menus area.
+ * High-fidelity top navigation inspired by UE5.
  */
 
 export class SerionToolbar extends HTMLElement {
@@ -22,20 +22,22 @@ export class SerionToolbar extends HTMLElement {
           align-items: center;
           background-color: var(--serion-bg-1);
           border-bottom: 1px solid var(--serion-border);
-          padding: 0 1rem;
-          gap: 1.5rem;
+          padding: 0 0.5rem;
+          gap: 1rem;
           color: var(--serion-text-main);
           user-select: none;
+          height: var(--serion-toolbar-height);
         }
 
         .logo {
-          font-weight: bold;
+          font-weight: 800;
           color: #fff;
-          letter-spacing: 1px;
-          font-size: 14px;
+          letter-spacing: 1.5px;
+          font-size: 13px;
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
+          padding: 0 1rem;
         }
 
         .logo span {
@@ -44,29 +46,38 @@ export class SerionToolbar extends HTMLElement {
 
         .nav-items {
           display: flex;
-          gap: 1rem;
+          height: 100%;
         }
 
         .nav-item {
+          display: flex;
+          align-items: center;
+          padding: 0 12px;
           cursor: pointer;
-          color: var(--serion-text-dim);
-          transition: color 0.2s;
+          color: var(--serion-text-main);
+          font-size: 12px;
+          transition: background-color 0.15s, color 0.15s;
+          height: 100%;
         }
 
         .nav-item:hover {
-          color: var(--serion-text-main);
+          background-color: var(--serion-bg-2);
+          color: #fff;
         }
 
         .action-button {
           background-color: var(--serion-accent);
           color: white;
           border: none;
-          padding: 4px 12px;
-          border-radius: 4px;
+          padding: 6px 16px;
+          border-radius: 3px;
           font-size: 11px;
-          font-weight: 600;
+          font-weight: 700;
           cursor: pointer;
           margin-left: auto;
+          margin-right: 1rem;
+          text-transform: uppercase;
+          transition: background-color 0.2s;
         }
 
         .action-button:hover {
@@ -82,7 +93,7 @@ export class SerionToolbar extends HTMLElement {
         <div class="nav-item">Build</div>
         <div class="nav-item">Help</div>
       </div>
-      <button class="action-button">SELECT MODE</button>
+      <button class="action-button">Select Mode</button>
     `;
   }
 }

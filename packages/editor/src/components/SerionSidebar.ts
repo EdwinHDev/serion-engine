@@ -1,9 +1,11 @@
 /**
  * SerionSidebar Component
- * Vertical panel for Outliner and Details.
+ * Functional collapsible panels for Outliner and Details.
  */
 
 export class SerionSidebar extends HTMLElement {
+  private collapsedPanels: Set<string> = new Set();
+
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
@@ -13,8 +15,21 @@ export class SerionSidebar extends HTMLElement {
     this.render();
   }
 
+  private togglePanel(panelId: string) {
+    if (this.collapsedPanels.has(panelId)) {
+      this.collapsedPanels.delete(panelId);
+    } else {
+      this.collapsedPanels.add(panelId);
+    }
+    this.render();
+  }
+
   private render() {
     if (!this.shadowRoot) return;
+
+    const isOutlinerCollapsed = this.collapsedPanels.has('outliner');
+    const isDetailsCollapsed = this.collapsedPanels.has('details');
+
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -23,14 +38,24 @@ export class SerionSidebar extends HTMLElement {
           background-color: var(--serion-bg-1);
           border-left: 1px solid var(--serion-border);
           height: 100%;
-          width: var(--serion-sidebar-width);
+          width: 100%;
+          min-width: 200px; /* Enforce min-width */
+          overflow: hidden;
         }
 
         .panel {
-          flex: 1;
           display: flex;
           flex-direction: column;
           min-height: 0;
+          transition: flex 0.2s ease-in-out;
+        }
+
+        .panel.expanded {
+          flex: 1;
+        }
+
+        .panel.collapsed {
+          flex: 0 0 auto;
         }
 
         .panel:not(:last-child) {
@@ -47,6 +72,22 @@ export class SerionSidebar extends HTMLElement {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .header:hover {
+          background-color: #333;
+        }
+
+        .arrow {
+          font-size: 8px;
+          transition: transform 0.2s;
+          display: inline-block;
+        }
+
+        .arrow.collapsed {
+          transform: rotate(-90deg);
         }
 
         .content {
@@ -54,6 +95,11 @@ export class SerionSidebar extends HTMLElement {
           padding: 1rem;
           overflow-y: auto;
           color: var(--serion-text-dim);
+          background-color: var(--serion-bg-1);
+        }
+
+        .panel.collapsed .content {
+          display: none;
         }
 
         .empty-state {
@@ -63,10 +109,10 @@ export class SerionSidebar extends HTMLElement {
       </style>
       
       <!-- Outliner Panel -->
-      <div class="panel">
-        <div class="header">
+      <div class="panel ${isOutlinerCollapsed ? 'collapsed' : 'expanded'}">
+        <div class="header" id="outliner-header">
           Outliner
-          <span style="font-size: 8px;">▼</span>
+          <span class="arrow ${isOutlinerCollapsed ? 'collapsed' : ''}">▼</span>
         </div>
         <div class="content">
           <div class="empty-state">No actors in scene...</div>
@@ -74,15 +120,19 @@ export class SerionSidebar extends HTMLElement {
       </div>
 
       <!-- Details Panel -->
-      <div class="panel">
-        <div class="header">
+      <div class="panel ${isDetailsCollapsed ? 'collapsed' : 'expanded'}">
+        <div class="header" id="details-header">
           Details
-          <span style="font-size: 8px;">▼</span>
+          <span class="arrow ${isDetailsCollapsed ? 'collapsed' : ''}">▼</span>
         </div>
         <div class="content">
           <div class="empty-state">Select an object to see details.</div>
         </div>
       </div>
     `;
+
+    // Add event listeners
+    this.shadowRoot.getElementById('outliner-header')?.addEventListener('click', () => this.togglePanel('outliner'));
+    this.shadowRoot.getElementById('details-header')?.addEventListener('click', () => this.togglePanel('details'));
   }
 }

@@ -1,6 +1,6 @@
 /**
  * SerionEditorShell Component
- * Master Layout Orchestrator using CSS Grid.
+ * Master Layout Orchestrator using CSS Grid and Pointer Capture for robust resizing.
  */
 
 export class SerionEditorShell extends HTMLElement {
@@ -25,56 +25,83 @@ export class SerionEditorShell extends HTMLElement {
 
     const sidebarSplitter = root.querySelector('.sidebar-splitter') as HTMLElement;
     const footerSplitter = root.querySelector('.footer-splitter') as HTMLElement;
+    const overlay = root.querySelector('.resize-overlay') as HTMLElement;
 
-    sidebarSplitter.addEventListener('mousedown', (e) => {
+    // Sidebar Resizing
+    sidebarSplitter.addEventListener('pointerdown', (e) => {
       this.isResizingSidebar = true;
-      document.body.style.cursor = 'col-resize';
+      sidebarSplitter.setPointerCapture(e.pointerId);
+      overlay.style.display = 'block';
+      overlay.style.cursor = 'col-resize';
       e.preventDefault();
     });
 
-    footerSplitter.addEventListener('mousedown', (e) => {
-      this.isResizingFooter = true;
-      document.body.style.cursor = 'row-resize';
-      e.preventDefault();
-    });
+    sidebarSplitter.addEventListener('pointermove', (e) => {
+      if (!this.isResizingSidebar) return;
 
-    window.addEventListener('mousemove', (e) => {
-      if (this.isResizingSidebar) {
-        const newWidth = window.innerWidth - e.clientX;
-        if (newWidth > 150 && newWidth < 600) {
-          this.sidebarWidth = newWidth;
-          this.updateLayout();
-        }
-      }
-
-      if (this.isResizingFooter) {
-        const newHeight = window.innerHeight - e.clientY - 24; // 24 is statusbar height
-        if (newHeight > 100 && newHeight < 500) {
-          this.footerHeight = newHeight;
-          this.updateLayout();
-        }
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 200 && newWidth <= 800) {
+        this.sidebarWidth = newWidth;
+        this.updateCSSVariables();
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    sidebarSplitter.addEventListener('pointerup', (e) => {
       this.isResizingSidebar = false;
+      sidebarSplitter.releasePointerCapture(e.pointerId);
+      overlay.style.display = 'none';
+      overlay.style.cursor = 'default';
+    });
+
+    // Footer Resizing
+    footerSplitter.addEventListener('pointerdown', (e) => {
+      this.isResizingFooter = true;
+      footerSplitter.setPointerCapture(e.pointerId);
+      overlay.style.display = 'block';
+      overlay.style.cursor = 'row-resize';
+      e.preventDefault();
+    });
+
+    footerSplitter.addEventListener('pointermove', (e) => {
+      if (!this.isResizingFooter) return;
+
+      const newHeight = window.innerHeight - e.clientY - 24; // 24 is statusbar height
+      if (newHeight >= 100 && newHeight <= 600) {
+        this.footerHeight = newHeight;
+        this.updateCSSVariables();
+      }
+    });
+
+    footerSplitter.addEventListener('pointerup', (e) => {
       this.isResizingFooter = false;
-      document.body.style.cursor = 'default';
+      footerSplitter.releasePointerCapture(e.pointerId);
+      overlay.style.display = 'none';
+      overlay.style.cursor = 'default';
     });
   }
 
-  private updateLayout() {
-    const container = this.shadowRoot?.querySelector('.shell-container') as HTMLElement;
-    if (container) {
-      container.style.gridTemplateColumns = `1fr ${this.sidebarWidth}px`;
-      container.style.gridTemplateRows = `var(--serion-toolbar-height) 1fr ${this.footerHeight}px var(--serion-statusbar-height)`;
-    }
+  private updateCSSVariables() {
+    this.style.setProperty('--sidebar-width', `${this.sidebarWidth}px`);
+    this.style.setProperty('--footer-height', `${this.footerHeight}px`);
   }
 
   private render() {
     if (!this.shadowRoot) return;
+
+    // Set initial variables
+    this.updateCSSVariables();
+
     this.shadowRoot.innerHTML = `
       <style>
+        :host {
+          --sidebar-width: 350px;
+          --footer-height: 250px;
+          display: block;
+          height: 100vh;
+          width: 100vw;
+          overflow: hidden;
+        }
+
         .shell-container {
           display: grid;
           grid-template-areas:
@@ -82,11 +109,10 @@ export class SerionEditorShell extends HTMLElement {
             "main-area sidebar"
             "footer sidebar"
             "statusbar statusbar";
-          grid-template-rows: var(--serion-toolbar-height) 1fr ${this.footerHeight}px var(--serion-statusbar-height);
-          grid-template-columns: 1fr ${this.sidebarWidth}px;
-          height: 100vh;
-          width: 100vw;
-          overflow: hidden;
+          grid-template-rows: var(--serion-toolbar-height) 1fr var(--footer-height) var(--serion-statusbar-height);
+          grid-template-columns: 1fr var(--sidebar-width);
+          height: 100%;
+          width: 100%;
           background-color: var(--serion-bg-0);
           position: relative;
         }
@@ -100,31 +126,45 @@ export class SerionEditorShell extends HTMLElement {
         .splitter {
           position: absolute;
           background: transparent;
-          z-index: 100;
+          z-index: 1000;
           transition: background 0.2s;
+          touch-action: none;
         }
 
-        .splitter:hover {
+        .splitter:hover, .splitter:active {
           background: var(--serion-accent);
         }
 
         .sidebar-splitter {
           top: var(--serion-toolbar-height);
           bottom: var(--serion-statusbar-height);
-          right: ${this.sidebarWidth - 2}px;
-          width: var(--serion-splitter-width);
+          right: calc(var(--sidebar-width) - 2px);
+          width: 4px;
           cursor: col-resize;
         }
 
         .footer-splitter {
-          bottom: calc(var(--serion-statusbar-height) + ${this.footerHeight - 2}px);
+          bottom: calc(var(--serion-statusbar-height) + var(--footer-height) - 2px);
           left: 0;
-          right: ${this.sidebarWidth}px;
-          height: var(--serion-splitter-width);
+          right: var(--sidebar-width);
+          height: 4px;
           cursor: row-resize;
+        }
+
+        /* Global Resize Overlay */
+        .resize-overlay {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 9999;
+          background: transparent;
         }
       </style>
       
+      <div class="resize-overlay"></div>
       <div class="shell-container">
         <serion-toolbar></serion-toolbar>
         <serion-viewport></serion-viewport>

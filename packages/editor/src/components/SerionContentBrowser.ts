@@ -1,6 +1,6 @@
 /**
  * SerionContentBrowser Component
- * Bottom panel for asset management.
+ * Refined asset browser with persistent selection logic.
  */
 
 export class SerionContentBrowser extends HTMLElement {
@@ -23,6 +23,26 @@ export class SerionContentBrowser extends HTMLElement {
     this.render();
   }
 
+  private handleAssetClick(e: MouseEvent, index: number) {
+    // Prevent event from bubbling to browser-area
+    e.stopPropagation();
+
+    const items = this.shadowRoot?.querySelectorAll('serion-asset-item');
+    items?.forEach((item, i) => {
+      if (i === index) {
+        item.setAttribute('selected', '');
+      } else {
+        item.removeAttribute('selected');
+      }
+    });
+  }
+
+  private handleAreaClick() {
+    // In many professional engines, clicking the empty space does NOT deselect.
+    // We keep the selection persistent as requested.
+    console.log("Clicked background area - selection preserved.");
+  }
+
   private render() {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = `
@@ -33,6 +53,7 @@ export class SerionContentBrowser extends HTMLElement {
           background-color: var(--serion-bg-1);
           border-top: 1px solid var(--serion-border);
           height: 100%;
+          overflow: hidden;
         }
 
         .header {
@@ -42,6 +63,7 @@ export class SerionContentBrowser extends HTMLElement {
           font-size: 11px;
           display: flex;
           gap: 1rem;
+          user-select: none;
         }
 
         .tab {
@@ -55,6 +77,7 @@ export class SerionContentBrowser extends HTMLElement {
           display: flex;
           padding: 1rem;
           overflow-y: auto;
+          background-color: var(--serion-bg-1);
         }
 
         .file-grid {
@@ -68,10 +91,12 @@ export class SerionContentBrowser extends HTMLElement {
       <div class="header">
         <div class="tab">Content Browser</div>
       </div>
-      <div class="browser-area">
+      <div class="browser-area" id="browser-area">
         <div class="file-grid">
-          ${this.assets.map(asset => `
+          ${this.assets.map((asset, index) => `
             <serion-asset-item 
+              class="asset-item"
+              data-index="${index}"
               type="${asset.type}" 
               label="${asset.label}">
             </serion-asset-item>
@@ -80,12 +105,12 @@ export class SerionContentBrowser extends HTMLElement {
       </div>
     `;
 
-    // Selection logic
-    this.shadowRoot.querySelectorAll('serion-asset-item').forEach(item => {
-      item.addEventListener('click', () => {
-        this.shadowRoot?.querySelectorAll('serion-asset-item').forEach(i => i.removeAttribute('selected'));
-        item.setAttribute('selected', '');
-      });
+    const area = this.shadowRoot.getElementById('browser-area');
+    area?.addEventListener('click', () => this.handleAreaClick());
+
+    const items = this.shadowRoot.querySelectorAll('.asset-item');
+    items.forEach((item, index) => {
+      item.addEventListener('click', (e) => this.handleAssetClick(e as MouseEvent, index));
     });
   }
 }
