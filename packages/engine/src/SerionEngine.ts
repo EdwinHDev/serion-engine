@@ -6,10 +6,11 @@ import { CameraManager } from './camera/CameraManager';
 import { SCamera } from './camera/SCamera';
 import { FreeCameraController } from './camera/FreeCameraController';
 import { GeometryRegistry } from './geometry/GeometryRegistry';
+import { SStaticMeshComponent } from './components/SStaticMeshComponent';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
- * Capa 8: Integración de GeometryRegistry y mallas estáticas.
+ * Capa 9: Batch Rendering y Escena Showcase.
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
@@ -24,12 +25,15 @@ export class SerionEngine {
 
   private freeCameraController: FreeCameraController | null = null;
 
+  // Buffer temporal para batching de instancias (10k entidades * 16 floats)
+  private batchBuffer = new Float32Array(10000 * 16);
+
   constructor() {
     this.rhi = new SerionRHI();
     this.cameraManager = new CameraManager();
     this.geometryRegistry = new GeometryRegistry();
 
-    const maxEntities = 10100; // Incrementado para Stress Test + Cámaras
+    const maxEntities = 10100;
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
 
@@ -40,39 +44,46 @@ export class SerionEngine {
     try {
       if (this.isRunning) return;
 
-      // 1. Inicializar RHI
       await this.rhi.initialize(canvas, this.transformPool.maxEntities);
-
-      // 2. Inicializar Geometría a través del Registro
       this.geometryRegistry.initialize(this.rhi.getDevice());
 
-      // 3. Configuración de Cámara
+      // 1. Configuración de Cámara Showcase
       const cameraActor = this.activeWorld.spawnActor();
-      cameraActor.setPosition(0, -20, 10);
+      cameraActor.setPosition(0, -800, 300);
 
       const mainCamera = new SCamera(cameraActor);
       this.cameraManager.setActiveCamera(mainCamera);
       this.freeCameraController = new FreeCameraController(mainCamera);
 
-      // 4. Stress Test Grid
-      // Respetar la escala de 1 unidad = 1 centimetro
-      const gridSide = 100;
-      const spacing = 200.0; // 2 metros
-      const offset = (gridSide * spacing) / 2;
+      // 2. ESCENA SHOWCASE
 
-      for (let i = 0; i < gridSide; i++) {
-        for (let j = 0; j < gridSide; j++) {
-          const actor = this.activeWorld.spawnActor();
-          actor.setPosition((i * spacing) - offset, (j * spacing) - offset, 0);
-          actor.setScale(100, 100, 100); // 1 metro
-        }
+      // El Suelo (Plane)
+      const floor = this.activeWorld.spawnActor();
+      floor.setScale(2000, 2000, 1);
+      floor.setPosition(0, 0, 0);
+      floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
+
+      // Las 5 Primitivas Volumétricas
+      const meshIds = [
+        'Primitive_Cube',
+        'Primitive_Sphere',
+        'Primitive_Cylinder',
+        'Primitive_Cone',
+        'Primitive_Capsule'
+      ];
+
+      for (let i = 0; i < meshIds.length; i++) {
+        const actor = this.activeWorld.spawnActor();
+        actor.setPosition((i - 2) * 200, 0, 100);
+        actor.setScale(100, 100, 100);
+        actor.staticMesh = new SStaticMeshComponent(meshIds[i]);
       }
 
       this.isRunning = true;
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
 
-      Logger.info('ENGINE', "Sistemas listos. Iniciando bucle de mallas estáticas.");
+      Logger.info('ENGINE', "Showcase ready. Batch Rendering active.");
     } catch (error) {
       Logger.error('ENGINE', "Fallo crítico al iniciar Engine:", error as any);
       throw error;
@@ -84,7 +95,6 @@ export class SerionEngine {
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    // Actualizar Cámara (UX Unreal Style)
     if (this.freeCameraController) {
       this.freeCameraController.update(deltaTime);
     }
@@ -92,17 +102,37 @@ export class SerionEngine {
     this.activeWorld.tick(deltaTime);
 
     const activeCamera = this.cameraManager.getActiveCamera();
-    const cubeMesh = this.geometryRegistry.getMesh('Primitive_Cube');
-
-    if (activeCamera && cubeMesh) {
-      // AAA Auto-Sync: La cámara siempre sabe la resolución exacta del hardware
+    if (activeCamera) {
       activeCamera.aspectRatio = this.rhi.getAspectRatio();
-
       const viewProjMat = activeCamera.getViewProjectionMatrix();
-      const activeCount = this.activeWorld.getEntityManager().getActiveCount();
 
-      if (activeCount > 0) {
-        this.rhi.renderFrame(this.transformPool.getRawData(), activeCount, viewProjMat, cubeMesh);
+      // --- BATCH RENDERING ---
+      const meshIds = this.geometryRegistry.getMeshIds();
+      const rawTransforms = this.transformPool.getRawData();
+      const actors = this.activeWorld.getActors();
+
+      for (const meshId of meshIds) {
+        const mesh = this.geometryRegistry.getMesh(meshId);
+        if (!mesh) continue;
+
+        let instanceCount = 0;
+
+        // Iterar sobre todos los actores del mundo
+        for (const actor of actors.values()) {
+          if (actor.staticMesh?.meshId === meshId) {
+            const sourceOffset = actor.id * 16;
+            const targetOffset = instanceCount * 16;
+
+            for (let m = 0; m < 16; m++) {
+              this.batchBuffer[targetOffset + m] = rawTransforms[sourceOffset + m];
+            }
+            instanceCount++;
+          }
+        }
+
+        if (instanceCount > 0) {
+          this.rhi.renderFrame(this.batchBuffer, instanceCount, viewProjMat, mesh);
+        }
       }
     }
 

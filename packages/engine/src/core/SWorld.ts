@@ -52,6 +52,10 @@ export class SWorld {
   /**
    * Obtiene el EntityManager del mundo.
    */
+  public getActors(): Map<number, SActor> {
+    return this.actors;
+  }
+
   public getEntityManager(): EntityManager {
     return this.entityManager;
   }

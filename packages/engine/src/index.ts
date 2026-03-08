@@ -19,3 +19,6 @@ export * from './camera/FreeCameraController';
 // [GEOMETRY]
 export * from './geometry/SStaticMesh';
 export * from './geometry/GeometryRegistry';
+
+// [COMPONENTS]
+export * from './components/SStaticMeshComponent';

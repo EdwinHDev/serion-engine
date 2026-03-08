@@ -1,3 +1,5 @@
+import { SStaticMeshComponent } from '../components/SStaticMeshComponent';
+
 /**
  * Interfaz mínima para evitar dependencias circulares con SerionEngine.
  */
@@ -22,14 +24,11 @@ interface IEngineProxy {
 }
 
 /**
- * SActor - Modelo de Actores Proxy (Envoltura Ligera).
- * Delega toda la gestión de datos pesados al TransformPool (DOD).
+ * SActor - Proxy ligero para entidades en el mundo.
  */
 export class SActor {
-  /**
-   * @param id Identificador único de la entidad en el motor.
-   * @param engine Referencia al motor para acceder a los pools de memoria.
-   */
+  public staticMesh: SStaticMeshComponent | null = null;
+
   constructor(
     public readonly id: number,
     private readonly engine: IEngineProxy
@@ -46,9 +45,6 @@ export class SActor {
   public get z(): number { return this.engine.transformPool.getPositionZ(this.id); }
   public set z(val: number) { this.engine.transformPool.setPosition(this.id, this.x, this.y, val); }
 
-  /**
-   * Setea la posición completa en una sola llamada (más eficiente).
-   */
   public setPosition(x: number, y: number, z: number): void {
     this.engine.transformPool.setPosition(this.id, x, y, z);
   }
@@ -67,9 +63,6 @@ export class SActor {
   public get rotationW(): number { return this.engine.transformPool.getRotationW(this.id); }
   public set rotationW(val: number) { this.engine.transformPool.setRotation(this.id, this.rotationX, this.rotationY, this.rotationZ, val); }
 
-  /**
-   * Setea la rotación completa en una sola llamada.
-   */
   public setRotation(x: number, y: number, z: number, w: number): void {
     this.engine.transformPool.setRotation(this.id, x, y, z, w);
   }
@@ -85,9 +78,6 @@ export class SActor {
   public get scaleZ(): number { return this.engine.transformPool.getScaleZ(this.id); }
   public set scaleZ(val: number) { this.engine.transformPool.setScale(this.id, this.scaleX, this.scaleY, val); }
 
-  /**
-   * Setea la escala completa en una sola llamada.
-   */
   public setScale(x: number, y: number, z: number): void {
     this.engine.transformPool.setScale(this.id, x, y, z);
   }
