@@ -1,4 +1,5 @@
 import { Logger } from '../utils/Logger';
+import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
@@ -9,6 +10,9 @@ export class SerionRHI {
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
+
+  // [PIPELINES]: Estados de renderizado pre-compilados
+  private renderPipeline: GPURenderPipeline | null = null;
 
   // [PERFORMANCE]: Descriptor pre-asignado para evitar GC durante el loop de renderizado.
   private renderPassDescriptor: GPURenderPassDescriptor | null = null;
@@ -34,10 +38,6 @@ export class SerionRHI {
       Logger.fatal('RHI', msg);
       throw new Error(msg);
     }
-
-    // [AUDITORÍA DE HARDWARE]: Extraer información real de la GPU (API Moderna).
-    // const adapterInfo = this.adapter.info;
-    // Logger.info('RHI', `Hardware de Video: ${adapterInfo.vendor} - ${adapterInfo.architecture}`);
 
     // 2. Solicitar Dispositivo
     this.device = await this.adapter.requestDevice();
@@ -69,7 +69,30 @@ export class SerionRHI {
       alphaMode: 'premultiplied',
     });
 
-    // 4. Inicializar Descriptores Reciclables (Zero GC)
+    // 4. Crear Pipeline de Renderizado (El Primer Triángulo)
+    const shaderModule = this.device.createShaderModule({
+      label: 'Basic Triangle Shader',
+      code: BasicShaderWGSL
+    });
+
+    this.renderPipeline = this.device.createRenderPipeline({
+      label: 'Main Render Pipeline',
+      layout: 'auto',
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+      },
+    });
+
+    // 5. Inicializar Descriptores Reciclables (Zero GC)
     this.renderPassDescriptor = {
       colorAttachments: [
         {
@@ -85,15 +108,15 @@ export class SerionRHI {
   }
 
   /**
-   * Limpia la pantalla con un color específico.
+   * Limpia la pantalla y dibuja el triángulo de validación.
    * @param r Rojo (0.0 - 1.0)
    * @param g Verde (0.0 - 1.0)
    * @param b Azul (0.0 - 1.0)
    * @param a Alpha (0.0 - 1.0)
    */
   public clearScreen(r: number, g: number, b: number, a: number): void {
-    if (!this.device || !this.context || !this.renderPassDescriptor) {
-      Logger.error('RHI', "Intento de clearScreen sin inicializar.");
+    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline) {
+      Logger.error('RHI', "Intento de renderizado sin inicializar pipeline.");
       throw new Error("RHI no inicializado. Llama a initialize() primero.");
     }
 
@@ -111,6 +134,11 @@ export class SerionRHI {
     clearValue.a = a;
 
     const passEncoder = commandEncoder.beginRenderPass(this.renderPassDescriptor);
+
+    // --- COMANDOS DE DIBUJO ---
+    passEncoder.setPipeline(this.renderPipeline);
+    passEncoder.draw(3); // 3 vértices definidos en el shader
+
     passEncoder.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
