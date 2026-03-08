@@ -77,8 +77,8 @@ export class SerionEngine {
       floor.setPosition(0, 0, -5);
       floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
       floor.material = new SMaterialComponent();
-      floor.material.setColor(0.1, 0.1, 0.1);
-      floor.material.setPBR(0.0, 0.7);
+      floor.material.setColor(0.6, 0.6, 0.6);
+      floor.material.setPBR(0.0, 0.7); // 0% Metálico, 70% Rugoso (Mate)
 
       // Figuras para proyectar sombras
       this.spawnShowcaseActor('Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);    // Oro

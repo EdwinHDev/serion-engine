@@ -10,7 +10,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 12: Cascaded Shadow Maps (CSM) and Multi-Pass RHI.
+ * Capa 12.4: CSM, Sincronización 288 bytes y Shadow Bind Group Isolation.
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -24,7 +24,9 @@ export class SerionRHI {
 
   private cameraBuffer: GPUBuffer | null = null;
   private instanceBuffer: GPUBuffer | null = null;
+
   private cameraBindGroup: GPUBindGroup | null = null;
+  private shadowBindGroup: GPUBindGroup | null = null; // NUEVO: Grupo aislado para evitar el Read/Write Hazard
 
   // Shadow Resources
   private shadowTexture0: GPUTexture | null = null;
@@ -73,26 +75,32 @@ export class SerionRHI {
 
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
 
-    // 1. Layout de Bind Group Global (272 bytes + 2 Shadow Maps + 1 Sampler)
+    // 1. Layout Principal (Cámara del Jugador: Lee Uniforms + 2 Texturas de Sombra + Sampler)
     const envLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } }, // ShadowMap0
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } }, // ShadowMap1
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }  // ShadowSampler
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
       ]
     });
-
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
 
-    // 2. Main Render Pipeline (PBR + Shadows)
+    // 2. NUEVO: Layout de Sombras (Cámara del Sol: Solo lee Uniforms, NO TEXTURAS)
+    const shadowEnvLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }
+      ]
+    });
+    const shadowPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [shadowEnvLayout] });
+
     const vertexBuffers: GPUVertexBufferLayout[] = [
       {
         arrayStride: 32,
         attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' }, // Pos
-          { shaderLocation: 1, offset: 12, format: 'float32x3' }, // Normal
-          { shaderLocation: 2, offset: 24, format: 'float32x2' }  // UV
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },
+          { shaderLocation: 2, offset: 24, format: 'float32x2' }
         ]
       },
       {
@@ -113,6 +121,7 @@ export class SerionRHI {
       }
     ];
 
+    // Main Render Pipeline
     this.renderPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
@@ -121,20 +130,21 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // 3. Shadow Pipeline (Depth Only)
+    // Shadow Pipeline (Usa su propio Layout minimalista)
     this.shadowPipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
+      layout: shadowPipelineLayout, // <--- Conectado al nuevo layout aislado
       vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' }
     });
 
-    // 4. Buffers and Bind Groups
-    this.cameraBuffer = this.device.createBuffer({ size: 272, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // Buffers a 288 Bytes
+    this.cameraBuffer = this.device.createBuffer({ size: 288, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 
     this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
 
+    // Grupo de la Cámara Principal (Uniforms + Lectura de Texturas)
     this.cameraBindGroup = this.device.createBindGroup({
       layout: envLayout,
       entries: [
@@ -142,6 +152,14 @@ export class SerionRHI {
         { binding: 1, resource: this.shadowView0! },
         { binding: 2, resource: this.shadowView1! },
         { binding: 3, resource: this.shadowSampler! }
+      ]
+    });
+
+    // NUEVO: Grupo de las Sombras (Solo Uniforms)
+    this.shadowBindGroup = this.device.createBindGroup({
+      layout: shadowEnvLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer } }
       ]
     });
 
@@ -209,7 +227,6 @@ export class SerionRHI {
   public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
     if (!this.device || !this.context || !this.mainPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
-    // Resize Detection
     const dpr = window.devicePixelRatio || 1;
     const targetW = Math.floor(this.canvas.clientWidth * dpr);
     const targetH = Math.floor(this.canvas.clientHeight * dpr);
@@ -225,8 +242,7 @@ export class SerionRHI {
       this.updatePassDescriptors();
     }
 
-    // Update Buffers
-    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 272);
+    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 288);
     this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
 
     const encoder = this.device.createCommandEncoder();
@@ -234,14 +250,14 @@ export class SerionRHI {
     // PASS 0: Shadow Cascade 0
     const pass0 = encoder.beginRenderPass(this.shadowPassDescriptor0!);
     pass0.setPipeline(this.shadowPipeline!);
-    pass0.setBindGroup(0, this.cameraBindGroup!);
+    pass0.setBindGroup(0, this.shadowBindGroup!); // <--- Usamos el grupo aislado, cero errores
     this.recordDrawCalls(pass0, drawCalls, activeCallCount);
     pass0.end();
 
     // PASS 1: Shadow Cascade 1
     const pass1 = encoder.beginRenderPass(this.shadowPassDescriptor1!);
     pass1.setPipeline(this.shadowPipeline!);
-    pass1.setBindGroup(0, this.cameraBindGroup!);
+    pass1.setBindGroup(0, this.shadowBindGroup!); // <--- Usamos el grupo aislado, cero errores
     this.recordDrawCalls(pass1, drawCalls, activeCallCount);
     pass1.end();
 
@@ -250,7 +266,7 @@ export class SerionRHI {
     attachments[0].view = this.context.getCurrentTexture().createView();
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
     mainPass.setPipeline(this.renderPipeline);
-    mainPass.setBindGroup(0, this.cameraBindGroup!);
+    mainPass.setBindGroup(0, this.cameraBindGroup!); // <--- Aquí SÍ leemos las sombras calculadas
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
     mainPass.end();
 

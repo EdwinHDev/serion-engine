@@ -46,8 +46,6 @@ struct VertexOutput {
     @location(7) viewZ: f32,
 };
 
-const EXPOSURE: f32 = 1.0;
-
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     let modelMatrix = mat4x4<f32>(
@@ -113,35 +111,62 @@ fn calculateShadow(shadowMap: texture_depth_2d, shadowPos: vec3<f32>) -> f32 {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // 1. Espacio Lineal y Parámetros
     let metallic = input.pbrParams.x;
     let roughness = input.pbrParams.y;
-    let diffuseColor = input.baseColor.rgb * (1.0 - metallic);
-    
+    let albedo = pow(input.baseColor.rgb, vec3<f32>(2.2));
+
     let N = normalize(input.worldNormal);
+    let V = normalize(env.cameraPosition.xyz - input.worldPosition);
     let L = normalize(-env.sunDirection_Intensity.xyz);
     let nDotL = max(dot(N, L), 0.0);
-    
+
+    // 2. Cascaded Shadow Maps (Branchless)
     let shadow0 = calculateShadow(shadowMap0, input.shadowPos0);
     let shadow1 = calculateShadow(shadowMap1, input.shadowPos1);
-
     let useCascade1 = step(env.cascadeSplits.x, input.viewZ);
     let finalShadow = mix(shadow0, shadow1, useCascade1);
 
-    let sunRadiance = env.sunColor_AmbientInt.rgb * (env.sunDirection_Intensity.w * EXPOSURE);
-    let up = N.z * 0.5 + 0.5;
-    let ambientLight = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
-    
-    let viewDir = normalize(env.cameraPosition.xyz - input.worldPosition);
-    let halfVector = normalize(L + viewDir);
-    let NdotH = max(dot(N, halfVector), 0.0);
-    let specPower = mix(4.0, 2048.0, 1.0 - roughness);
-    let specularIntensity = pow(NdotH, specPower);
-    let specColor = mix(vec3<f32>(1.0, 1.0, 1.0), input.baseColor.rgb, metallic);
-    let directSpecular = specColor * (specularIntensity * env.sunDirection_Intensity.w * EXPOSURE);
+    // 3. Conservación de Energía PBR
+    let diffuseColor = albedo * (1.0 - metallic);
+    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
 
-    let directLight = ((diffuseColor * sunRadiance * nDotL) + (directSpecular * (1.0 - roughness))) * finalShadow;
-    let finalColor = directLight + (diffuseColor * ambientLight);
-    
+    // 4. Luz Directa y Exposición
+    let EXPOSURE: f32 = 1.0 / 100000.0;
+    let sunRadiance = env.sunColor_AmbientInt.rgb * (env.sunDirection_Intensity.w * EXPOSURE);
+
+    let H = normalize(L + V);
+    let nDotH = max(dot(N, H), 0.0);
+    let specPower = mix(4.0, 2048.0, 1.0 - roughness);
+    let directSpecular = pow(nDotH, specPower) * f0 * sunRadiance;
+
+    // 5. Entorno Hemisférico
+    let up = N.z * 0.5 + 0.5;
+    let ambientIrradiance = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
+    let ambientDiffuse = diffuseColor * ambientIrradiance;
+
+    // Reflejo Ambiental (Para metales)
+    let R = reflect(-V, N);
+    let reflMix = R.z * 0.5 + 0.5;
+    let ambientRefl = mix(env.groundColor.rgb, env.skyColor.rgb, reflMix) * env.sunColor_AmbientInt.w;
+    let ambientSpecular = f0 * ambientRefl * (1.0 - roughness);
+
+    // 6. Ecuación de Sombreado (La sombra SOLO afecta a la luz del Sol)
+    let directLight = ((diffuseColor * sunRadiance * nDotL) + directSpecular) * finalShadow;
+    let ambientLight = ambientDiffuse + ambientSpecular;
+    var finalColor = directLight + ambientLight;
+
+    // 7. ACES Filmic Tone Mapping
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    finalColor = clamp((finalColor * (a * finalColor + b)) / (finalColor * (c * finalColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+
+    // 8. Corrección Gamma (sRGB)
+    finalColor = pow(finalColor, vec3<f32>(1.0 / 2.2));
+
     return vec4<f32>(finalColor, input.baseColor.a);
 }
 `;
