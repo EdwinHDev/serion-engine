@@ -40,7 +40,20 @@ export class SerionEngine {
       Logger.info('ENGINE', "Iniciando Serion Engine...");
 
       // 1. Inicializar Capa 0 (Hardware & RHI)
-      await this.rhi.initialize(canvas);
+      await this.rhi.initialize(canvas, this.transformPool.maxEntities);
+
+      // [DEBUG]: Spawnear 3 actores de prueba formando una pirámide
+      const a1 = this.activeWorld.spawnActor();
+      a1.setPosition(0, 0.5, 0);
+      a1.setScale(0.5, 0.5, 0.5);
+
+      const a2 = this.activeWorld.spawnActor();
+      a2.setPosition(-0.5, -0.5, 0);
+      a2.setScale(0.5, 0.5, 0.5);
+
+      const a3 = this.activeWorld.spawnActor();
+      a3.setPosition(0.5, -0.5, 0);
+      a3.setScale(0.5, 0.5, 0.5);
 
       // 2. Configuración de Tiempo
       this.isRunning = true;
@@ -86,8 +99,11 @@ export class SerionEngine {
     this.activeWorld.tick(deltaTime);
 
     // --- SECCIÓN RENDER (Visualización) ---
-    // Por ahora, solo limpiamos la pantalla con el estilo Unreal.
-    this.rhi.clearScreen(0.1, 0.1, 0.1, 1.0);
+    // Puente DOD-GPU: Dibujar actores de forma instanciada
+    const activeCount = this.activeWorld.getEntityManager().getActiveCount();
+    if (activeCount > 0) {
+      this.rhi.renderFrame(this.transformPool.getRawData(), activeCount);
+    }
 
     // Solicitar el siguiente frame
     this.animationFrameId = requestAnimationFrame(this.loop);

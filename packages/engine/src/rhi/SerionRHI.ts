@@ -14,14 +14,19 @@ export class SerionRHI {
   // [PIPELINES]: Estados de renderizado pre-compilados
   private renderPipeline: GPURenderPipeline | null = null;
 
+  // [RECURSOS GPU]: Buffers y BindGroups para comunicación con Shaders
+  private transformBuffer: GPUBuffer | null = null;
+  private bindGroup: GPUBindGroup | null = null;
+
   // [PERFORMANCE]: Descriptor pre-asignado para evitar GC durante el loop de renderizado.
   private renderPassDescriptor: GPURenderPassDescriptor | null = null;
 
   /**
    * Inicializa el hardware gráfico y configura el contexto del canvas.
    * @param canvas El elemento HTMLCanvasElement que servirá como viewport.
+   * @param maxEntities Límite de entidades para dimensionar los buffers de VRAM.
    */
-  public async initialize(canvas: HTMLCanvasElement): Promise<void> {
+  public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     if (!navigator.gpu) {
       const msg = "WebGPU no está soportado en este navegador.";
       Logger.fatal('RHI', msg);
@@ -38,6 +43,10 @@ export class SerionRHI {
       Logger.fatal('RHI', msg);
       throw new Error(msg);
     }
+
+    // [AUDITORÍA DE HARDWARE]: Identificar la GPU real asignada por el sistema.
+    const adapterInfo = this.adapter.info;
+    Logger.info('RHI', `Hardware de Video: ${adapterInfo.vendor} - ${adapterInfo.architecture}`);
 
     // 2. Solicitar Dispositivo
     this.device = await this.adapter.requestDevice();
@@ -92,7 +101,28 @@ export class SerionRHI {
       },
     });
 
-    // 5. Inicializar Descriptores Reciclables (Zero GC)
+    // 5. Crear Recursos de Memoria GPU (Bridge DOD-GPU)
+    // 16 floats * 4 bytes per float
+    const bufferSize = maxEntities * 16 * 4;
+    this.transformBuffer = this.device.createBuffer({
+      label: 'Transform Storage Buffer',
+      size: bufferSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    // BindGroup 0: Comunicación de transformaciones
+    this.bindGroup = this.device.createBindGroup({
+      label: 'Main Transform BindGroup',
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: this.transformBuffer },
+        },
+      ],
+    });
+
+    // 6. Inicializar Descriptores Reciclables (Zero GC)
     this.renderPassDescriptor = {
       colorAttachments: [
         {
@@ -108,17 +138,24 @@ export class SerionRHI {
   }
 
   /**
-   * Limpia la pantalla y dibuja el triángulo de validación.
-   * @param r Rojo (0.0 - 1.0)
-   * @param g Verde (0.0 - 1.0)
-   * @param b Azul (0.0 - 1.0)
-   * @param a Alpha (0.0 - 1.0)
+   * Procesa un frame de renderizado instanciado.
+   * @param transformArray Array crudo del TransformPool.
+   * @param instanceCount Cantidad de instancias activas para dibujar.
    */
-  public clearScreen(r: number, g: number, b: number, a: number): void {
-    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline) {
-      Logger.error('RHI', "Intento de renderizado sin inicializar pipeline.");
+  public renderFrame(transformArray: Float32Array, instanceCount: number): void {
+    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.transformBuffer || !this.bindGroup) {
+      Logger.error('RHI', "Intento de renderizado sin inicializar recursos.");
       throw new Error("RHI no inicializado. Llama a initialize() primero.");
     }
+
+    // 1. Actualizar VRAM con los datos de la CPU
+    this.device.queue.writeBuffer(
+      this.transformBuffer,
+      0,
+      transformArray.buffer as ArrayBuffer,
+      transformArray.byteOffset,
+      transformArray.byteLength
+    );
 
     const commandEncoder = this.device.createCommandEncoder();
 
@@ -127,17 +164,21 @@ export class SerionRHI {
     const colorAttachment = attachments[0];
     colorAttachment.view = this.context.getCurrentTexture().createView();
 
+    // Fondo Unreal-Style por defecto
     const clearValue = colorAttachment.clearValue as GPUColorDict;
-    clearValue.r = r;
-    clearValue.g = g;
-    clearValue.b = b;
-    clearValue.a = a;
+    clearValue.r = 0.1;
+    clearValue.g = 0.1;
+    clearValue.b = 0.1;
+    clearValue.a = 1.0;
 
     const passEncoder = commandEncoder.beginRenderPass(this.renderPassDescriptor);
 
     // --- COMANDOS DE DIBUJO ---
     passEncoder.setPipeline(this.renderPipeline);
-    passEncoder.draw(3); // 3 vértices definidos en el shader
+    passEncoder.setBindGroup(0, this.bindGroup);
+
+    // Dibujo Instanciado: 3 vértices por cada actor activo.
+    passEncoder.draw(3, instanceCount);
 
     passEncoder.end();
 
