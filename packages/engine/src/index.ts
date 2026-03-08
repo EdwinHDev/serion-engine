@@ -1,6 +1,5 @@
 /**
  * Serion Engine - Entry Point
- * Exportaciones limpias de la arquitectura del motor.
  */
 
 export * from './SerionEngine';
@@ -16,3 +15,7 @@ export * from './core/InputManager';
 export * from './camera/SCamera';
 export * from './camera/CameraManager';
 export * from './camera/FreeCameraController';
+
+// [GEOMETRY]
+export * from './geometry/SStaticMesh';
+export * from './geometry/GeometryRegistry';

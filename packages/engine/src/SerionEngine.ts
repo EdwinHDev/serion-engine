@@ -5,14 +5,17 @@ import { SWorld } from './core/SWorld';
 import { CameraManager } from './camera/CameraManager';
 import { SCamera } from './camera/SCamera';
 import { FreeCameraController } from './camera/FreeCameraController';
+import { GeometryRegistry } from './geometry/GeometryRegistry';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
+ * Capa 8: Integración de GeometryRegistry y mallas estáticas.
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
   public readonly activeWorld: SWorld;
   public readonly cameraManager: CameraManager;
+  public readonly geometryRegistry: GeometryRegistry;
 
   private rhi: SerionRHI;
   private isRunning: boolean = false;
@@ -21,21 +24,12 @@ export class SerionEngine {
 
   private freeCameraController: FreeCameraController | null = null;
 
-  // [GEOMETRY]: Cubo 3D Estándar
-  private static readonly CUBE_GEOMETRY = new Float32Array([
-    -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
-    -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
-    -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
-    -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
-    0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5,
-    -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
-  ]);
-
   constructor() {
     this.rhi = new SerionRHI();
     this.cameraManager = new CameraManager();
+    this.geometryRegistry = new GeometryRegistry();
 
-    const maxEntities = 10100;
+    const maxEntities = 10100; // Incrementado para Stress Test + Cámaras
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
 
@@ -45,19 +39,22 @@ export class SerionEngine {
   public async start(canvas: HTMLCanvasElement): Promise<void> {
     try {
       if (this.isRunning) return;
-      await this.rhi.initialize(canvas, this.transformPool.maxEntities, SerionEngine.CUBE_GEOMETRY);
 
-      // --- CONFIGURACIÓN DE CÁMARA (Estilo Unreal) ---
+      // 1. Inicializar RHI
+      await this.rhi.initialize(canvas, this.transformPool.maxEntities);
+
+      // 2. Inicializar Geometría a través del Registro
+      this.geometryRegistry.initialize(this.rhi.getDevice());
+
+      // 3. Configuración de Cámara
       const cameraActor = this.activeWorld.spawnActor();
       cameraActor.setPosition(0, -20, 10);
 
       const mainCamera = new SCamera(cameraActor);
-      mainCamera.aspectRatio = canvas.width / canvas.height;
-
       this.cameraManager.setActiveCamera(mainCamera);
       this.freeCameraController = new FreeCameraController(mainCamera);
 
-      // Stress Test Grid
+      // 4. Stress Test Grid
       const gridSide = 100;
       const spacing = 2.0;
       const offset = (gridSide * spacing) / 2;
@@ -73,7 +70,8 @@ export class SerionEngine {
       this.isRunning = true;
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
-      Logger.info('ENGINE', "Bucle iniciado con sistema de cámaras desacoplado.");
+
+      Logger.info('ENGINE', "Sistemas listos. Iniciando bucle de mallas estáticas.");
     } catch (error) {
       Logger.error('ENGINE', "Fallo crítico al iniciar Engine:", error as any);
       throw error;
@@ -85,22 +83,22 @@ export class SerionEngine {
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    // Actualizar Controladores
+    // Actualizar Cámara (UX Unreal Style)
     if (this.freeCameraController) {
       this.freeCameraController.update(deltaTime);
     }
 
-    // Tick de Mundo
     this.activeWorld.tick(deltaTime);
 
-    // Renderizado
     const activeCamera = this.cameraManager.getActiveCamera();
-    if (activeCamera) {
+    const cubeMesh = this.geometryRegistry.getMesh('Primitive_Cube');
+
+    if (activeCamera && cubeMesh) {
       const viewProjMat = activeCamera.getViewProjectionMatrix();
       const activeCount = this.activeWorld.getEntityManager().getActiveCount();
 
       if (activeCount > 0) {
-        this.rhi.renderFrame(this.transformPool.getRawData(), activeCount, viewProjMat);
+        this.rhi.renderFrame(this.transformPool.getRawData(), activeCount, viewProjMat, cubeMesh);
       }
     }
 
