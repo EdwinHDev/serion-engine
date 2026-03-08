@@ -108,9 +108,13 @@ export class SerionContentBrowser extends HTMLElement {
     const area = this.shadowRoot.getElementById('browser-area');
     area?.addEventListener('click', () => this.handleAreaClick());
 
-    const items = this.shadowRoot.querySelectorAll('.asset-item');
-    items.forEach((item, index) => {
-      item.addEventListener('click', (e) => this.handleAssetClick(e as MouseEvent, index));
+    const grid = this.shadowRoot.querySelector('.file-grid');
+    grid?.addEventListener('click', (e) => {
+      const item = (e.target as HTMLElement).closest('serion-asset-item');
+      if (item) {
+        const index = parseInt(item.getAttribute('data-index') || '0');
+        this.handleAssetClick(e as MouseEvent, index);
+      }
     });
   }
 }

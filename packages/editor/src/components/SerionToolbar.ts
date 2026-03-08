@@ -3,6 +3,7 @@
  * Refactored to use the standalone SerionModePanel.
  */
 import { MenuItem } from './SerionDropdown';
+import { MenuManager } from './MenuManager';
 
 export class SerionToolbar extends HTMLElement {
   private activeMode: string = 'Select Mode';
@@ -188,6 +189,17 @@ export class SerionToolbar extends HTMLElement {
     this.shadowRoot.getElementById('menu-tools')?.addEventListener('click', (e) => this.handleMenuClick(e as MouseEvent, 'tools'));
     this.shadowRoot.getElementById('menu-build')?.addEventListener('click', (e) => this.handleMenuClick(e as MouseEvent, 'build'));
     this.shadowRoot.getElementById('menu-help')?.addEventListener('click', (e) => this.handleMenuClick(e as MouseEvent, 'help'));
+
+    // Professional Hover-to-Switch logic
+    const navItems = ['file', 'edit', 'window', 'tools', 'build', 'help'];
+    navItems.forEach(id => {
+      this.shadowRoot?.getElementById(`menu-${id}`)?.addEventListener('mouseenter', (e) => {
+        if (MenuManager.getInstance().hasActiveMenu()) {
+          this.handleMenuClick(e as MouseEvent, id);
+        }
+      });
+    });
+
     this.shadowRoot.getElementById('btn-select-mode')?.addEventListener('click', (e) => this.openModePanel(e as MouseEvent));
   }
 }

@@ -125,14 +125,15 @@ export class SerionEditorShell extends HTMLElement {
 
         .splitter {
           position: absolute;
-          background: transparent;
+          background: var(--serion-accent);
           z-index: 1000;
-          transition: background 0.2s;
+          transition: opacity 0.2s;
           touch-action: none;
+          opacity: 0;
         }
 
         .splitter:hover, .splitter:active {
-          background: var(--serion-accent);
+          opacity: 1;
         }
 
         .sidebar-splitter {

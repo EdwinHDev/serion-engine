@@ -26,6 +26,10 @@ export class MenuManager {
     this.activeDropdown = menu;
   }
 
+  public hasActiveMenu(): boolean {
+    return this.activeDropdown !== null;
+  }
+
   public closeActiveMenu() {
     if (this.activeDropdown) {
       // We assume the menu component has a close method or we dispatch an event
