@@ -1,3 +1,5 @@
+import { SerionEngine } from '@serion/engine';
+
 /**
  * SerionViewport Component
  * Fixed DPI scaling to ensure crisp rendering on high-res displays.
@@ -6,6 +8,8 @@
 export class SerionViewport extends HTMLElement {
   private resizeObserver: ResizeObserver;
   private canvas: HTMLCanvasElement | null = null;
+  private engine: SerionEngine = new SerionEngine();
+  private statusText: HTMLElement | null = null;
 
   constructor() {
     super();
@@ -13,11 +17,41 @@ export class SerionViewport extends HTMLElement {
     this.resizeObserver = new ResizeObserver(() => this.handleResize());
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     this.render();
     this.canvas = this.shadowRoot?.querySelector('#serion-canvas') as HTMLCanvasElement;
+    this.statusText = this.shadowRoot?.querySelector('.status-text') as HTMLElement;
+
     this.resizeObserver.observe(this);
     this.handleResize();
+
+    if (this.canvas) {
+      await this.initEngine();
+    }
+  }
+
+  private async initEngine() {
+    if (!this.canvas || !this.statusText) return;
+
+    try {
+      this.statusText.textContent = "INITIALIZING WEBGPU...";
+      this.statusText.style.opacity = "1";
+
+      await this.engine.start(this.canvas);
+
+      // Successfully initialized - Ocultar overlay
+      this.statusText.style.transition = "opacity 1s ease-out";
+      this.statusText.style.opacity = "0";
+
+      setTimeout(() => {
+        if (this.statusText) this.statusText.style.display = "none";
+      }, 1000);
+
+    } catch (error) {
+      this.statusText.textContent = "WEBGPU ERROR - CHECK CONSOLE";
+      this.statusText.style.color = "#FF4444";
+      this.statusText.style.opacity = "1";
+    }
   }
 
   disconnectedCallback() {
@@ -67,12 +101,13 @@ export class SerionViewport extends HTMLElement {
         }
 
         .status-text {
-          font-family: var(--serion-font-family);
-          color: var(--serion-text-dim);
+          font-family: var(--serion-font-family, sans-serif);
+          color: var(--serion-text-dim, #888888);
           font-size: 14px;
           letter-spacing: 2px;
           opacity: 0.3;
           user-select: none;
+          transition: opacity 0.3s ease;
         }
 
         canvas {

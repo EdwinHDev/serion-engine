@@ -2,6 +2,9 @@
   "name": "@serion/editor",
   "version": "1.0.0",
   "type": "module",
+  "dependencies": {
+    "@serion/engine": "*"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

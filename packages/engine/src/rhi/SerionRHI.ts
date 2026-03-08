@@ -8,6 +8,9 @@ export class SerionRHI {
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
 
+  // [PERFORMANCE]: Descriptor pre-asignado para evitar GC durante el loop de renderizado.
+  private renderPassDescriptor: GPURenderPassDescriptor | null = null;
+
   /**
    * Inicializa el hardware gráfico y configura el contexto del canvas.
    * @param canvas El elemento HTMLCanvasElement que servirá como viewport.
@@ -52,6 +55,18 @@ export class SerionRHI {
       alphaMode: 'premultiplied',
     });
 
+    // 4. Inicializar Descriptores Reciclables (Zero GC)
+    this.renderPassDescriptor = {
+      colorAttachments: [
+        {
+          view: null as unknown as GPUTextureView, // Se asignará en caliente
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    };
+
     console.log(`Serion RHI inicializado a ${canvas.width}x${canvas.height} (DPI: ${devicePixelRatio})`);
   }
 
@@ -63,25 +78,24 @@ export class SerionRHI {
    * @param a Alpha (0.0 - 1.0)
    */
   public clearScreen(r: number, g: number, b: number, a: number): void {
-    if (!this.device || !this.context) {
+    if (!this.device || !this.context || !this.renderPassDescriptor) {
       throw new Error("RHI no inicializado. Llama a initialize() primero.");
     }
 
     const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
 
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r, g, b, a },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    };
+    // [OPTIMIZACIÓN]: Reutilización de descriptor. Prohibido usar {} o new.
+    const attachments = this.renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
+    const colorAttachment = attachments[0];
+    colorAttachment.view = this.context.getCurrentTexture().createView();
 
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+    const clearValue = colorAttachment.clearValue as GPUColorDict;
+    clearValue.r = r;
+    clearValue.g = g;
+    clearValue.b = b;
+    clearValue.a = a;
+
+    const passEncoder = commandEncoder.beginRenderPass(this.renderPassDescriptor);
     passEncoder.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
