@@ -115,6 +115,41 @@ export class SMat4 {
   }
 
   /**
+   * Construye una matriz 4x4 a partir de posición, cuaternión de rotación y escala.
+   * out = translation * rotation * scale. (Column-Major)
+   */
+  public static fromRotationTranslationScale(out: Float32Array, q: number[] | Float32Array, v: number[] | Float32Array, s: number[] | Float32Array, outOffset = 0, qOffset = 0, vOffset = 0, sOffset = 0): void {
+    // Quaternion math
+    const x = q[qOffset], y = q[qOffset + 1], z = q[qOffset + 2], w = q[qOffset + 3];
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2;
+    const yy = y * y2, yz = y * z2, zz = z * z2;
+    const wx = w * x2, wy = w * y2, wz = w * z2;
+
+    const sx = s[sOffset], sy = s[sOffset + 1], sz = s[sOffset + 2];
+
+    out[outOffset + 0] = (1 - (yy + zz)) * sx;
+    out[outOffset + 1] = (xy + wz) * sx;
+    out[outOffset + 2] = (xz - wy) * sx;
+    out[outOffset + 3] = 0;
+
+    out[outOffset + 4] = (xy - wz) * sy;
+    out[outOffset + 5] = (1 - (xx + zz)) * sy;
+    out[outOffset + 6] = (yz + wx) * sy;
+    out[outOffset + 7] = 0;
+
+    out[outOffset + 8] = (xz + wy) * sz;
+    out[outOffset + 9] = (yz - wx) * sz;
+    out[outOffset + 10] = (1 - (xx + yy)) * sz;
+    out[outOffset + 11] = 0;
+
+    out[outOffset + 12] = v[vOffset];
+    out[outOffset + 13] = v[vOffset + 1];
+    out[outOffset + 14] = v[vOffset + 2];
+    out[outOffset + 15] = 1;
+  }
+
+  /**
    * Calcula la Transpuesta Inversa de una matriz 4x4 (Matriz Normal).
    * out = transpose(inverse(a)).
    */

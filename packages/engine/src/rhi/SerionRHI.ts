@@ -2,6 +2,12 @@ import { Logger } from '../utils/Logger';
 import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 
+export interface SDrawCall {
+  mesh: SStaticMesh;
+  count: number;
+  startOffsetBytes: number;
+}
+
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
  * Capa 10: PBR Hemispheric Lighting & Normal Matrix Support.
@@ -145,7 +151,7 @@ export class SerionRHI {
     });
   }
 
-  public renderFrame(instanceData: Float32Array, instanceCount: number, globalEnvData: Float32Array, mesh: SStaticMesh): void {
+  public renderFrame(drawCalls: SDrawCall[], globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
     if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -159,34 +165,34 @@ export class SerionRHI {
       this.canvas.height = targetH;
       this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
       this.createDepthTexture(targetW, targetH);
-      (this.renderPassDescriptor.depthStencilAttachment as GPURenderPassDepthStencilAttachment).view = this.depthTexture!.createView();
     }
 
-    // Actualizar Uniforms (144 bytes)
-    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer as ArrayBuffer, globalEnvData.byteOffset, 144);
+    // 1. Actualizar Uniforms (1 solo write por frame)
+    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 144);
 
-    // Actualizar Datos de Instancia
-    this.device.queue.writeBuffer(this.instanceBuffer!, 0, instanceData.buffer as ArrayBuffer, instanceData.byteOffset, instanceData.byteLength);
+    // 2. Actualizar Datos de TODAS las instancias juntas (Zero-Overwrite)
+    this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
 
     const encoder = this.device.createCommandEncoder();
     const attachments = this.renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
+
+    // 3. Obtener textura 1 sola vez por frame
     attachments[0].view = this.context.getCurrentTexture().createView();
     (this.renderPassDescriptor.depthStencilAttachment as GPURenderPassDepthStencilAttachment).view = this.depthTexture!.createView();
 
     const pass = encoder.beginRenderPass(this.renderPassDescriptor);
     pass.setPipeline(this.renderPipeline);
-
-    // Bindings
     pass.setBindGroup(0, this.cameraBindGroup!);
 
-    // Vertex Buffers
-    pass.setVertexBuffer(0, mesh.vertexBuffer);     // Geometría
-    pass.setVertexBuffer(1, this.instanceBuffer!);  // Instancias (Matrices)
+    // 4. Ejecutar la Lista de Comandos (Draw Calls)
+    for (const call of drawCalls) {
+      pass.setVertexBuffer(0, call.mesh.vertexBuffer);
 
-    // Index Buffer
-    pass.setIndexBuffer(mesh.indexBuffer, 'uint16');
-
-    pass.drawIndexed(mesh.indexCount, instanceCount);
+      // Magia AAA: Usamos el mismo Buffer gigante, pero desplazamos el puntero de lectura
+      pass.setVertexBuffer(1, this.instanceBuffer!, call.startOffsetBytes);
+      pass.setIndexBuffer(call.mesh.indexBuffer, 'uint16');
+      pass.drawIndexed(call.mesh.indexCount, call.count);
+    }
 
     pass.end();
     this.device.queue.submit([encoder.finish()]);
