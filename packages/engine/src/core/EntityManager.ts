@@ -37,6 +37,12 @@ export class EntityManager {
    * Libera un ID para su posterior reciclaje.
    */
   public destroyEntity(id: number): void {
+    // [SEGURIDAD]: Evitar destruir IDs que nunca han sido generados o fuera de rango
+    if (id < 0 || id >= this.nextId) {
+      Logger.warn('ENGINE', `Intento de destruir entidad inválida o no instanciada: ${id}`);
+      return;
+    }
+
     // O(1) check using availability map
     if (this.isAvailable[id] === 0) {
       this.availableIds.push(id);

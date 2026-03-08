@@ -1,8 +1,7 @@
 import { SerionRHI } from './rhi/SerionRHI';
 import { Logger } from './utils/Logger';
 import { TransformPool } from './memory/TransformPool';
-import { EntityManager } from './core/EntityManager';
-import { SActor } from './core/SActor';
+import { SWorld } from './core/SWorld';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
@@ -10,7 +9,7 @@ import { SActor } from './core/SActor';
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
-  public readonly entityManager: EntityManager;
+  public readonly activeWorld: SWorld;
   private rhi: SerionRHI;
   private isRunning: boolean = false;
   private lastTime: number = 0;
@@ -23,20 +22,11 @@ export class SerionEngine {
     const maxEntities = 10000;
     this.transformPool = new TransformPool(maxEntities);
 
-    // Inicializar Gestor de Entidades (Capa 2 - ECS Híbrido)
-    this.entityManager = new EntityManager(maxEntities);
+    // Inicializar Mundo Activo (Capa 3 - Simulación)
+    this.activeWorld = new SWorld(this, maxEntities);
 
     const memoryKB = (this.transformPool.getByteSize()) / 1024;
     Logger.info('ENGINE', `TransformPool inicializado: ${memoryKB} KB para ${maxEntities} entidades.`);
-  }
-
-  /**
-   * Crea un nuevo actor en el mundo.
-   * Método de conveniencia que utiliza el EntityManager y retorna un Proxy.
-   */
-  public spawnActor(): SActor {
-    const id = this.entityManager.createEntity();
-    return new SActor(id, this);
   }
 
   /**
@@ -92,8 +82,8 @@ export class SerionEngine {
     this.lastTime = currentTime;
 
     // --- SECCIÓN UPDATE (Simulación) ---
-    // Aquí se ejecutarán los sistemas DOD, físicas e IA.
-    // [TODO]: SWorld.tick(deltaTime)
+    // Delegar la simulación al mundo activo.
+    this.activeWorld.tick(deltaTime);
 
     // --- SECCIÓN RENDER (Visualización) ---
     // Por ahora, solo limpiamos la pantalla con el estilo Unreal.
