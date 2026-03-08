@@ -33,9 +33,38 @@ export class SMat4 {
   }
 
   /**
+   * Genera una matriz ortográfica para WebGPU (Z-Up, Depth 0 to 1).
+   */
+  public static ortho(out: Float32Array, left: number, right: number, bottom: number, top: number, near: number, far: number, outOffset = 0): void {
+    const lr = 1 / (left - right);
+    const bt = 1 / (bottom - top);
+    const nf = 1 / (near - far);
+
+    out[outOffset + 0] = -2 * lr;
+    out[outOffset + 1] = 0;
+    out[outOffset + 2] = 0;
+    out[outOffset + 3] = 0;
+
+    out[outOffset + 4] = 0;
+    out[outOffset + 5] = -2 * bt;
+    out[outOffset + 6] = 0;
+    out[outOffset + 7] = 0;
+
+    out[outOffset + 8] = 0;
+    out[outOffset + 9] = 0;
+    out[outOffset + 10] = nf;
+    out[outOffset + 11] = 0;
+
+    out[outOffset + 12] = (left + right) * lr;
+    out[outOffset + 13] = (top + bottom) * bt;
+    out[outOffset + 14] = near * nf;
+    out[outOffset + 15] = 1;
+  }
+
+  /**
    * Genera una matriz de vista LookAt adaptada a Z-Up.
    */
-  public static lookAt(out: Float32Array, eye: number[], target: number[], up: number[]): void {
+  public static lookAt(out: Float32Array, eye: number[] | Float32Array, target: number[] | Float32Array, up: number[] | Float32Array, outOffset = 0): void {
     const eyex = eye[0], eyey = eye[1], eyez = eye[2];
     const upx = up[0], upy = up[1], upz = up[2];
     const tarx = target[0], tary = target[1], tarz = target[2];
@@ -71,47 +100,47 @@ export class SMat4 {
       y0 *= len; y1 *= len; y2 *= len;
     }
 
-    out[0] = x0; out[1] = y0; out[2] = z0; out[3] = 0;
-    out[4] = x1; out[5] = y1; out[6] = z1; out[7] = 0;
-    out[8] = x2; out[9] = y2; out[10] = z2; out[11] = 0;
-    out[12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
-    out[13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
-    out[14] = -(z0 * eyex + z1 * eyey + z2 * eyez);
-    out[15] = 1;
+    out[outOffset + 0] = x0; out[outOffset + 1] = y0; out[outOffset + 2] = z0; out[outOffset + 3] = 0;
+    out[outOffset + 4] = x1; out[outOffset + 5] = y1; out[outOffset + 6] = z1; out[outOffset + 7] = 0;
+    out[outOffset + 8] = x2; out[outOffset + 9] = y2; out[outOffset + 10] = z2; out[outOffset + 11] = 0;
+    out[outOffset + 12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
+    out[outOffset + 13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
+    out[outOffset + 14] = -(z0 * eyex + z1 * eyey + z2 * eyez);
+    out[outOffset + 15] = 1;
   }
 
   /**
    * Multiplicación de matrices out = a * b.
    */
-  public static multiply(out: Float32Array, a: Float32Array, b: Float32Array): void {
-    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+  public static multiply(out: Float32Array, a: Float32Array, b: Float32Array, outOffset = 0, aOffset = 0, bOffset = 0): void {
+    const a00 = a[aOffset + 0], a01 = a[aOffset + 1], a02 = a[aOffset + 2], a03 = a[aOffset + 3];
+    const a10 = a[aOffset + 4], a11 = a[aOffset + 5], a12 = a[aOffset + 6], a13 = a[aOffset + 7];
+    const a20 = a[aOffset + 8], a21 = a[aOffset + 9], a22 = a[aOffset + 10], a23 = a[aOffset + 11];
+    const a30 = a[aOffset + 12], a31 = a[aOffset + 13], a32 = a[aOffset + 14], a33 = a[aOffset + 15];
 
-    let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
-    out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+    let b0 = b[bOffset + 0], b1 = b[bOffset + 1], b2 = b[bOffset + 2], b3 = b[bOffset + 3];
+    out[outOffset + 0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[outOffset + 1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[outOffset + 2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[outOffset + 3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
 
-    b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
-    out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+    b0 = b[bOffset + 4]; b1 = b[bOffset + 5]; b2 = b[bOffset + 6]; b3 = b[bOffset + 7];
+    out[outOffset + 4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[outOffset + 5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[outOffset + 6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[outOffset + 7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
 
-    b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
-    out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+    b0 = b[bOffset + 8]; b1 = b[bOffset + 9]; b2 = b[bOffset + 10]; b3 = b[bOffset + 11];
+    out[outOffset + 8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[outOffset + 9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[outOffset + 10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[outOffset + 11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
 
-    b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
-    out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-    out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-    out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-    out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+    b0 = b[bOffset + 12]; b1 = b[bOffset + 13]; b2 = b[bOffset + 14]; b3 = b[bOffset + 15];
+    out[outOffset + 12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+    out[outOffset + 13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+    out[outOffset + 14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+    out[outOffset + 15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
   }
 
   /**
@@ -119,7 +148,6 @@ export class SMat4 {
    * out = translation * rotation * scale. (Column-Major)
    */
   public static fromRotationTranslationScale(out: Float32Array, q: number[] | Float32Array, v: number[] | Float32Array, s: number[] | Float32Array, outOffset = 0, qOffset = 0, vOffset = 0, sOffset = 0): void {
-    // Quaternion math
     const x = q[qOffset], y = q[qOffset + 1], z = q[qOffset + 2], w = q[qOffset + 3];
     const x2 = x + x, y2 = y + y, z2 = z + z;
     const xx = x * x2, xy = x * y2, xz = x * z2;
@@ -180,7 +208,6 @@ export class SMat4 {
     }
     det = 1.0 / det;
 
-    // Inverse Transpose components
     out[outOffset + 0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
     out[outOffset + 4] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
     out[outOffset + 8] = (a31 * b05 - a32 * b04 + a33 * b03) * det;

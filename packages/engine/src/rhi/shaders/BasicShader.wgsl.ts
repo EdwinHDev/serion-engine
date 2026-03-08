@@ -1,35 +1,37 @@
-/**
- * BasicShader.wgsl.ts - Shader WGSL fundamental para Serion Engine.
- * Capa 10: Iluminación PBR Hemisférica y Matriz Normal.
- */
-
 export const BasicShaderWGSL = `
 struct GlobalEnvironment {
     viewProjectionMatrix: mat4x4<f32>,
-    cameraPosition: vec4<f32>,         // xyz + pad
-    sunDirection_Intensity: vec4<f32>, // xyz + w(intensity)
-    sunColor_AmbientInt: vec4<f32>,    // xyz + w(ambient intensity)
+    lightViewProj0: mat4x4<f32>,
+    lightViewProj1: mat4x4<f32>,
+    cascadeSplits: vec4<f32>,
+    cameraPosition: vec4<f32>,
+    sunDirection_Intensity: vec4<f32>,
+    sunColor_AmbientInt: vec4<f32>,
     skyColor: vec4<f32>,
-    groundColor: vec4<f32>
-}
+    groundColor: vec4<f32>,
+};
+
 @group(0) @binding(0) var<uniform> env: GlobalEnvironment;
+@group(0) @binding(1) var shadowMap0: texture_depth_2d;
+@group(0) @binding(2) var shadowMap1: texture_depth_2d;
+@group(0) @binding(3) var shadowSampler: sampler_comparison;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     
-    // Matriz de Modelo (Instanced) - Locations 3, 4, 5, 6
-    @location(3) model_res0: vec4<f32>,
-    @location(4) model_res1: vec4<f32>,
-    @location(5) model_res2: vec4<f32>,
-    @location(6) model_res3: vec4<f32>,
-
-    // Matriz Normal (Instanced) - Locations 7, 8, 9, 10
-    @location(7) normal_res0: vec4<f32>,
-    @location(8) normal_res1: vec4<f32>,
-    @location(9) normal_res2: vec4<f32>,
-    @location(10) normal_res3: vec4<f32>,
+    @location(3) modelMatrixR0: vec4<f32>,
+    @location(4) modelMatrixR1: vec4<f32>,
+    @location(5) modelMatrixR2: vec4<f32>,
+    @location(6) modelMatrixR3: vec4<f32>,
+    @location(7) normalMatrixR0: vec4<f32>,
+    @location(8) normalMatrixR1: vec4<f32>,
+    @location(9) normalMatrixR2: vec4<f32>,
+    @location(10) normalMatrixR3: vec4<f32>,
+    
+    @location(11) baseColor: vec4<f32>,
+    @location(12) pbrParams: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -37,58 +39,109 @@ struct VertexOutput {
     @location(0) worldPosition: vec3<f32>,
     @location(1) worldNormal: vec3<f32>,
     @location(2) uv: vec2<f32>,
+    @location(3) baseColor: vec4<f32>,
+    @location(4) pbrParams: vec4<f32>,
+    @location(5) shadowPos0: vec3<f32>,
+    @location(6) shadowPos1: vec3<f32>,
+    @location(7) viewZ: f32,
 };
+
+const EXPOSURE: f32 = 1.0;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     let modelMatrix = mat4x4<f32>(
-        input.model_res0,
-        input.model_res1,
-        input.model_res2,
-        input.model_res3
+        input.modelMatrixR0,
+        input.modelMatrixR1,
+        input.modelMatrixR2,
+        input.modelMatrixR3
     );
-
+    
     let normalMatrix = mat4x4<f32>(
-        input.normal_res0,
-        input.normal_res1,
-        input.normal_res2,
-        input.normal_res3
+        input.normalMatrixR0,
+        input.normalMatrixR1,
+        input.normalMatrixR2,
+        input.normalMatrixR3
     );
 
-    var output: VertexOutput;
-    
+    var out: VertexOutput;
     let worldPos = modelMatrix * vec4<f32>(input.position, 1.0);
-    output.worldPosition = worldPos.xyz;
-    output.position = env.viewProjectionMatrix * worldPos;
-    
-    // Transformar normal usando la Matriz Normal (Inverse Transpose)
-    output.worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
-    output.uv = input.uv;
+    out.position = env.viewProjectionMatrix * worldPos;
+    out.worldPosition = worldPos.xyz;
+    out.worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
+    out.uv = input.uv;
+    out.baseColor = input.baseColor;
+    out.pbrParams = input.pbrParams;
+    out.viewZ = out.position.w; 
 
-    return output;
+    // Dynamic Shadow Bias basado en escala
+    let scaleX = length(input.modelMatrixR0.xyz);
+    let scaleY = length(input.modelMatrixR1.xyz);
+    let scaleZ = length(input.modelMatrixR2.xyz);
+    let avgScale = (scaleX + scaleY + scaleZ) / 3.0;
+    let biasPos = worldPos.xyz + out.worldNormal * (0.5 * avgScale);
+
+    // Proyecciones de Sombra
+    let sPos0 = env.lightViewProj0 * vec4<f32>(biasPos, 1.0);
+    out.shadowPos0 = vec3<f32>(sPos0.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), sPos0.z);
+    
+    let sPos1 = env.lightViewProj1 * vec4<f32>(biasPos, 1.0);
+    out.shadowPos1 = vec3<f32>(sPos1.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), sPos1.z);
+    
+    return out;
+}
+
+fn calculateShadow(shadowMap: texture_depth_2d, shadowPos: vec3<f32>) -> f32 {
+    let inBoundsX = step(0.0, shadowPos.x) * step(shadowPos.x, 1.0);
+    let inBoundsY = step(0.0, shadowPos.y) * step(shadowPos.y, 1.0);
+    let inBoundsZ = step(0.0, shadowPos.z) * step(shadowPos.z, 1.0);
+    let inBounds = inBoundsX * inBoundsY * inBoundsZ;
+
+    var visibility = 0.0;
+    let size = 1.0 / 2048.0;
+    
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let offset = vec2<f32>(f32(x), f32(y)) * size;
+            visibility += textureSampleCompare(shadowMap, shadowSampler, shadowPos.xy + offset, shadowPos.z - 0.0005);
+        }
+    }
+    
+    visibility /= 9.0;
+    return mix(1.0, visibility, inBounds);
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let normal = normalize(input.worldNormal);
+    let metallic = input.pbrParams.x;
+    let roughness = input.pbrParams.y;
+    let diffuseColor = input.baseColor.rgb * (1.0 - metallic);
     
-    // --- CONSTANTES FÍSICAS ---
-    let EXPOSURE: f32 = 1.0 / 100000.0;
-    let baseColor = vec3<f32>(0.8, 0.8, 0.8);
+    let N = normalize(input.worldNormal);
+    let L = normalize(-env.sunDirection_Intensity.xyz);
+    let nDotL = max(dot(N, L), 0.0);
     
-    // --- LUZ DIRECTA (SOL) ---
-    // sunDirection ya viene invertido o lo invertimos aquí según estándar
-    let nDotL = max(dot(normal, -normalize(env.sunDirection_Intensity.xyz)), 0.0);
-    let directLight = nDotL * env.sunColor_AmbientInt.xyz * (env.sunDirection_Intensity.w * EXPOSURE);
+    let shadow0 = calculateShadow(shadowMap0, input.shadowPos0);
+    let shadow1 = calculateShadow(shadowMap1, input.shadowPos1);
+
+    let useCascade1 = step(env.cascadeSplits.x, input.viewZ);
+    let finalShadow = mix(shadow0, shadow1, useCascade1);
+
+    let sunRadiance = env.sunColor_AmbientInt.rgb * (env.sunDirection_Intensity.w * EXPOSURE);
+    let up = N.z * 0.5 + 0.5;
+    let ambientLight = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
     
-    // --- LUZ AMBIENTAL HEMISFÉRICA (Z-UP) ---
-    // Mapeamos Z de [-1, 1] a [0, 1]
-    let hemiMix = (normal.z * 0.5) + 0.5;
-    let ambientLight = mix(env.groundColor.xyz, env.skyColor.xyz, hemiMix) * env.sunColor_AmbientInt.w;
+    let viewDir = normalize(env.cameraPosition.xyz - input.worldPosition);
+    let halfVector = normalize(L + viewDir);
+    let NdotH = max(dot(N, halfVector), 0.0);
+    let specPower = mix(4.0, 2048.0, 1.0 - roughness);
+    let specularIntensity = pow(NdotH, specPower);
+    let specColor = mix(vec3<f32>(1.0, 1.0, 1.0), input.baseColor.rgb, metallic);
+    let directSpecular = specColor * (specularIntensity * env.sunDirection_Intensity.w * EXPOSURE);
+
+    let directLight = ((diffuseColor * sunRadiance * nDotL) + (directSpecular * (1.0 - roughness))) * finalShadow;
+    let finalColor = directLight + (diffuseColor * ambientLight);
     
-    // --- COLOR FINAL ---
-    let finalRadiance = baseColor * (directLight + ambientLight);
-    
-    return vec4<f32>(finalRadiance, 1.0);
+    return vec4<f32>(finalColor, input.baseColor.a);
 }
 `;

@@ -26,8 +26,11 @@ interface IEngineProxy {
 /**
  * SActor - Proxy ligero para entidades en el mundo.
  */
+import { SMaterialComponent } from '../components/SMaterialComponent';
+
 export class SActor {
   public staticMesh: SStaticMeshComponent | null = null;
+  public material: SMaterialComponent | null = null;
 
   constructor(
     public readonly id: number,
