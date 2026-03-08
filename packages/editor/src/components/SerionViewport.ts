@@ -3,9 +3,9 @@ import { SerionEngine, InputManager } from '@serion/engine';
 /**
  * SerionViewport Component
  * Managed interface between the DOM and the Serion Engine.
+ * Capa 10.6: Just-In-Time Resolution (No ResizeObserver).
  */
 export class SerionViewport extends HTMLElement {
-  private resizeObserver: ResizeObserver;
   private canvas: HTMLCanvasElement | null = null;
   private engine: SerionEngine = new SerionEngine();
   private statusText: HTMLElement | null = null;
@@ -13,7 +13,6 @@ export class SerionViewport extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this.resizeObserver = new ResizeObserver(() => this.handleResize());
   }
 
   async connectedCallback() {
@@ -21,13 +20,15 @@ export class SerionViewport extends HTMLElement {
     this.canvas = this.shadowRoot?.querySelector('#serion-canvas') as HTMLCanvasElement;
     this.statusText = this.shadowRoot?.querySelector('.status-text') as HTMLElement;
 
-    // Inicializar Entrada de Usuario
-    InputManager.initialize();
-
-    this.resizeObserver.observe(this);
-    this.handleResize();
-
     if (this.canvas) {
+      // Delegación de tamaño al CSS (100% Contenedor)
+      this.canvas.style.width = '100%';
+      this.canvas.style.height = '100%';
+      this.canvas.style.display = 'block';
+
+      // Inicializar Entrada de Usuario
+      InputManager.initialize();
+
       this.setupViewportEvents();
       await this.initEngine();
     }
@@ -77,18 +78,8 @@ export class SerionViewport extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.resizeObserver.disconnect();
-  }
-
-  private handleResize() {
-    if (!this.canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = this.getBoundingClientRect();
-
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
-    this.canvas.style.width = `${rect.width}px`;
-    this.canvas.style.height = `${rect.height}px`;
+    // El motor se detiene automáticamente si el canvas es destruido
+    // No hace falta desconectar observadores.
   }
 
   private render() {

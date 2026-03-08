@@ -152,17 +152,22 @@ export class SerionRHI {
   public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
     if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
+    // 1. Detección de Resize Just-In-Time (JIT)
     const dpr = window.devicePixelRatio || 1;
     const targetW = Math.floor(this.canvas.clientWidth * dpr);
     const targetH = Math.floor(this.canvas.clientHeight * dpr);
 
+    // Protección vital: No renderizar si no hay área visible para evitar crashes
+    if (targetW === 0 || targetH === 0) return;
+
     if (this.currentWidth !== targetW || this.currentHeight !== targetH) {
       this.currentWidth = targetW;
       this.currentHeight = targetH;
-      this.canvas.width = targetW;
-      this.canvas.height = targetH;
+      this.canvas.width = targetW;   // JIT Physical Resize
+      this.canvas.height = targetH;  // JIT Physical Resize
       this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
       this.createDepthTexture(targetW, targetH);
+      this.depthTextureView = this.depthTexture!.createView();
     }
 
     // 1. Actualizar Uniforms
