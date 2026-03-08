@@ -20,6 +20,9 @@ export class SerionRHI {
   private cameraBindGroup: GPUBindGroup | null = null;
   private transformBindGroup: GPUBindGroup | null = null;
 
+  // [DEPTH]: Z-Buffer para oclusión correcta
+  private depthTexture: GPUTexture | null = null;
+
   // [PERFORMANCE]: Descriptor pre-asignado (Zero GC)
   private renderPassDescriptor: GPURenderPassDescriptor | null = null;
 
@@ -45,13 +48,26 @@ export class SerionRHI {
     if (!this.context) throw new Error("No context found.");
 
     this.format = navigator.gpu.getPreferredCanvasFormat();
+
+    // Manejo de DPI
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * devicePixelRatio;
+    canvas.height = canvas.clientHeight * devicePixelRatio;
+
     this.context.configure({
       device: this.device,
       format: this.format,
       alphaMode: 'premultiplied',
     });
 
-    // --- 1. Definir Bind Group Layouts (EXPLÍCITO para evitar errores de validación) ---
+    // --- 1. Crear Textura de Profundidad (Z-Buffer) ---
+    this.depthTexture = this.device.createTexture({
+      size: [canvas.width, canvas.height],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // --- 2. Definir Bind Group Layouts ---
     const cameraLayout = this.device.createBindGroupLayout({
       label: 'Camera Layout',
       entries: [{
@@ -70,7 +86,7 @@ export class SerionRHI {
       }]
     });
 
-    // --- 2. Crear Pipeline ---
+    // --- 3. Crear Pipeline con Depth Testing ---
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
     const pipelineLayout = this.device.createPipelineLayout({
       bindGroupLayouts: [cameraLayout, transformLayout]
@@ -80,10 +96,15 @@ export class SerionRHI {
       layout: pipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'vs_main' },
       fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list' }
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth24plus',
+      },
     });
 
-    // --- 3. Crear Buffers ---
+    // --- 4. Crear Buffers ---
     this.cameraBuffer = this.device.createBuffer({
       size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
@@ -94,25 +115,31 @@ export class SerionRHI {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     });
 
-    // --- 4. Crear Bind Groups ---
+    // --- 5. Crear Bind Groups ---
     this.cameraBindGroup = this.device.createBindGroup({
       layout: cameraLayout,
-      entries: [{ binding: 0, resource: { buffer: this.cameraBuffer! } }]
+      entries: [{ binding: 0, resource: { buffer: this.cameraBuffer } }]
     });
 
     this.transformBindGroup = this.device.createBindGroup({
       layout: transformLayout,
-      entries: [{ binding: 0, resource: { buffer: this.transformBuffer! } }]
+      entries: [{ binding: 0, resource: { buffer: this.transformBuffer } }]
     });
 
-    // --- 5. Descriptor ---
+    // --- 6. Descriptor (Zero GC) ---
     this.renderPassDescriptor = {
       colorAttachments: [{
         view: null as unknown as GPUTextureView,
         clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
         loadOp: 'clear',
         storeOp: 'store',
-      }]
+      }],
+      depthStencilAttachment: {
+        view: this.depthTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      }
     };
   }
 
@@ -121,7 +148,7 @@ export class SerionRHI {
    */
   public renderFrame(transformArray: Float32Array, instanceCount: number, viewProj: Float32Array): void {
     if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline ||
-      !this.cameraBuffer || !this.transformBuffer || !this.cameraBindGroup || !this.transformBindGroup) return;
+      !this.cameraBuffer || !this.transformBuffer || !this.cameraBindGroup || !this.transformBindGroup || !this.depthTexture) return;
 
     // Actualizar VRAM
     this.device.queue.writeBuffer(
@@ -142,6 +169,9 @@ export class SerionRHI {
     const encoder = this.device.createCommandEncoder();
     const attachments = this.renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
     attachments[0].view = this.context.getCurrentTexture().createView();
+
+    // El depthView debe estar disponible en el descriptor (podemos reutilizarlo si no cambia el canvas)
+    // Pero por seguridad en redimensionamientos futuros lo podríamos actualizar aquí.
 
     const pass = encoder.beginRenderPass(this.renderPassDescriptor);
     pass.setPipeline(this.renderPipeline);

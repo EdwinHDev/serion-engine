@@ -22,7 +22,7 @@ export class SerionEngine {
 
   constructor() {
     this.rhi = new SerionRHI();
-    const maxEntities = 10000;
+    const maxEntities = 10000; // Incrementado para el Stress Test
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
 
@@ -34,15 +34,29 @@ export class SerionEngine {
       if (this.isRunning) return;
       await this.rhi.initialize(canvas, this.transformPool.maxEntities);
 
-      // Setup 3D Pyramid
-      const a1 = this.activeWorld.spawnActor(); a1.setPosition(0, 0, 1); a1.setScale(0.5, 0.5, 0.5);
-      const a2 = this.activeWorld.spawnActor(); a2.setPosition(-1, 0, 0); a2.setScale(0.5, 0.5, 0.5);
-      const a3 = this.activeWorld.spawnActor(); a3.setPosition(1, 0, 0); a3.setScale(0.5, 0.5, 0.5);
+      // --- HITO: STRESS TEST (10k ACTORES) ---
+      Logger.info('ENGINE', "Ejecutando Stress Test: Spawning 10,000 actores...");
+
+      const gridSide = 100;
+      const spacing = 1.0;
+      const startPos = -(gridSide * spacing) / 2;
+
+      for (let i = 0; i < gridSide; i++) {
+        for (let j = 0; j < gridSide; j++) {
+          const actor = this.activeWorld.spawnActor();
+          const x = startPos + (i * spacing);
+          const y = startPos + (j * spacing);
+          const z = Math.sin(i * 0.2) * Math.cos(j * 0.2) * 2.0; // Terreno ondulado
+
+          actor.setPosition(x, y, z);
+          actor.setScale(0.4, 0.4, 0.4);
+        }
+      }
 
       this.isRunning = true;
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
-      Logger.info('ENGINE', "Motor iniciado.");
+      Logger.info('ENGINE', "Stress Test iniciado. 10,000 entidades activas.");
     } catch (error) {
       Logger.error('ENGINE', "Fallo al iniciar:", error as any);
       throw error;
@@ -61,10 +75,14 @@ export class SerionEngine {
 
     this.activeWorld.tick(deltaTime);
 
-    // Calcular Cámara (Z-Up)
-    const aspect = 16 / 9; // TODO: Usar aspect real del canvas
-    SMat4.perspective(this.projMat, 45 * Math.PI / 180, aspect, 0.1, 1000);
-    SMat4.lookAt(this.viewMat, [0, -5, 2], [0, 0, 0], [0, 0, 1]);
+    // Calcular Cámara (Z-Up Perspective)
+    // Cámara elevada para ver la rejilla completa
+    const aspect = window.innerWidth / window.innerHeight;
+    SMat4.perspective(this.projMat, 45 * Math.PI / 180, aspect, 0.1, 2000);
+
+    // Elevamos la cámara a 80 unidades en Y (atrás) y 50 en Z (arriba)
+    SMatrix4_LookAtFixed(this.viewMat, [0, -80, 50], [0, 0, 0], [0, 0, 1]);
+
     SMat4.multiply(this.viewProjMat, this.projMat, this.viewMat);
 
     const activeCount = this.activeWorld.getEntityManager().getActiveCount();
@@ -76,4 +94,12 @@ export class SerionEngine {
   };
 
   public getRHI(): SerionRHI { return this.rhi; }
+}
+
+/**
+ * Helder temporal para asegurar que SMat4.lookAt se porta bien.
+ * (Nota: Usamos SMat4.lookAt directamente si confiamos en los cambios previos)
+ */
+function SMatrix4_LookAtFixed(out: Float32Array, eye: number[], target: number[], up: number[]): void {
+  SMat4.lookAt(out, eye, target, up);
 }
