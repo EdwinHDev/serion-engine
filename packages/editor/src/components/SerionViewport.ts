@@ -28,8 +28,29 @@ export class SerionViewport extends HTMLElement {
     this.handleResize();
 
     if (this.canvas) {
+      this.setupViewportEvents();
       await this.initEngine();
     }
+  }
+
+  private setupViewportEvents() {
+    if (!this.canvas) return;
+
+    // Desactivar menú contextual para permitir uso del Click Derecho
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Gestión de Pointer Lock estilo Editor (Sólo al mantener Click Derecho)
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 2) { // Right Click
+        this.canvas?.requestPointerLock();
+      }
+    });
+
+    this.canvas.addEventListener('mouseup', (e) => {
+      if (e.button === 2) {
+        document.exitPointerLock();
+      }
+    });
   }
 
   private async initEngine() {

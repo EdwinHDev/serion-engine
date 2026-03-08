@@ -2,8 +2,9 @@ import { SerionRHI } from './rhi/SerionRHI';
 import { Logger } from './utils/Logger';
 import { TransformPool } from './memory/TransformPool';
 import { SWorld } from './core/SWorld';
-import { SMat4 } from './math/SMath';
-import { InputManager } from './core/InputManager';
+import { CameraManager } from './camera/CameraManager';
+import { SCamera } from './camera/SCamera';
+import { FreeCameraController } from './camera/FreeCameraController';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
@@ -11,38 +12,30 @@ import { InputManager } from './core/InputManager';
 export class SerionEngine {
   public readonly transformPool: TransformPool;
   public readonly activeWorld: SWorld;
+  public readonly cameraManager: CameraManager;
+
   private rhi: SerionRHI;
   private isRunning: boolean = false;
   private lastTime: number = 0;
   private animationFrameId: number = 0;
 
-  // [CAMERA STATE]: Propiedades para la Fly Camera
-  private cameraPosition = { x: 0, y: -20, z: 10 };
+  private freeCameraController: FreeCameraController | null = null;
 
-  // [MATH]: Buffers Zero GC
-  private viewMat = new Float32Array(16);
-  private projMat = new Float32Array(16);
-  private viewProjMat = new Float32Array(16);
-
-  // [GEOMETRY]: Cubo 3D Estándar (36 vértices)
+  // [GEOMETRY]: Cubo 3D Estándar
   private static readonly CUBE_GEOMETRY = new Float32Array([
-    // Frontal (Z+)
     -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
-    // Trasera (Z-)
     -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5,
-    // Superior (Y+)
     -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
-    // Inferior (Y-)
     -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
-    // Derecha (X+)
     0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5,
-    // Izquierda (X-)
     -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
   ]);
 
   constructor() {
     this.rhi = new SerionRHI();
-    const maxEntities = 10000;
+    this.cameraManager = new CameraManager();
+
+    const maxEntities = 10100;
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
 
@@ -53,6 +46,16 @@ export class SerionEngine {
     try {
       if (this.isRunning) return;
       await this.rhi.initialize(canvas, this.transformPool.maxEntities, SerionEngine.CUBE_GEOMETRY);
+
+      // --- CONFIGURACIÓN DE CÁMARA (Estilo Unreal) ---
+      const cameraActor = this.activeWorld.spawnActor();
+      cameraActor.setPosition(0, -20, 10);
+
+      const mainCamera = new SCamera(cameraActor);
+      mainCamera.aspectRatio = canvas.width / canvas.height;
+
+      this.cameraManager.setActiveCamera(mainCamera);
+      this.freeCameraController = new FreeCameraController(mainCamera);
 
       // Stress Test Grid
       const gridSide = 100;
@@ -70,16 +73,11 @@ export class SerionEngine {
       this.isRunning = true;
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
-      Logger.info('ENGINE', "Bucle de simulación iniciado.");
+      Logger.info('ENGINE', "Bucle iniciado con sistema de cámaras desacoplado.");
     } catch (error) {
-      Logger.error('ENGINE', "Fallo al iniciar:", error as any);
+      Logger.error('ENGINE', "Fallo crítico al iniciar Engine:", error as any);
       throw error;
     }
-  }
-
-  public stop(): void {
-    this.isRunning = false;
-    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
   }
 
   private loop = (currentTime: number): void => {
@@ -87,41 +85,32 @@ export class SerionEngine {
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    // --- INPUT & FLY CAMERA ---
-    const moveSpeed = 20.0 * deltaTime;
+    // Actualizar Controladores
+    if (this.freeCameraController) {
+      this.freeCameraController.update(deltaTime);
+    }
 
-    // Movimiento básico (WASD)
-    if (InputManager.isKeyDown('KeyW')) this.cameraPosition.y += moveSpeed;
-    if (InputManager.isKeyDown('KeyS')) this.cameraPosition.y -= moveSpeed;
-    if (InputManager.isKeyDown('KeyD')) this.cameraPosition.x += moveSpeed;
-    if (InputManager.isKeyDown('KeyA')) this.cameraPosition.x -= moveSpeed;
-
-    // Elevación (Espacio / Shift)
-    if (InputManager.isKeyDown('Space')) this.cameraPosition.z += moveSpeed;
-    if (InputManager.isKeyDown('ShiftLeft')) this.cameraPosition.z -= moveSpeed;
-
-    // --- SIMULACIÓN & RENDER ---
+    // Tick de Mundo
     this.activeWorld.tick(deltaTime);
 
-    const aspect = window.innerWidth / window.innerHeight;
-    SMat4.perspective(this.projMat, 45 * Math.PI / 180, aspect, 0.1, 2000.0);
+    // Renderizado
+    const activeCamera = this.cameraManager.getActiveCamera();
+    if (activeCamera) {
+      const viewProjMat = activeCamera.getViewProjectionMatrix();
+      const activeCount = this.activeWorld.getEntityManager().getActiveCount();
 
-    // Matriz de Vista Dinámica
-    SMat4.lookAt(this.viewMat,
-      [this.cameraPosition.x, this.cameraPosition.y, this.cameraPosition.z],
-      [this.cameraPosition.x, this.cameraPosition.y + 1, this.cameraPosition.z - 0.5], // Mirando hacia adelante/abajo
-      [0, 0, 1] // Z-Up
-    );
-
-    SMat4.multiply(this.viewProjMat, this.projMat, this.viewMat);
-
-    const activeCount = this.activeWorld.getEntityManager().getActiveCount();
-    if (activeCount > 0) {
-      this.rhi.renderFrame(this.transformPool.getRawData(), activeCount, this.viewProjMat);
+      if (activeCount > 0) {
+        this.rhi.renderFrame(this.transformPool.getRawData(), activeCount, viewProjMat);
+      }
     }
 
     this.animationFrameId = requestAnimationFrame(this.loop);
   };
+
+  public stop(): void {
+    this.isRunning = false;
+    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+  }
 
   public getRHI(): SerionRHI { return this.rhi; }
 }

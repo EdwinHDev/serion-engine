@@ -11,3 +11,8 @@ export * from './core/SActor';
 export * from './core/EntityManager';
 export * from './core/SWorld';
 export * from './core/InputManager';
+
+// [CAMERA SYSTEM]
+export * from './camera/SCamera';
+export * from './camera/CameraManager';
+export * from './camera/FreeCameraController';
