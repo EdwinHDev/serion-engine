@@ -7,7 +7,8 @@ import { InputManager } from '../core/InputManager';
  * Estilo Unreal: Solo activo mientras se mantiene el Click Derecho.
  */
 export class FreeCameraController {
-  public speed: number = 30.0;
+  // Respetar la escala de 1 unidad = 1 centimetro
+  public speed: number = 2000.0; // 20 m/s
   public mouseSensitivity: number = 0.15;
   public lerpFactor: number = 8.0;
 

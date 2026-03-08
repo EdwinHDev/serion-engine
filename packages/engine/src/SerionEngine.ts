@@ -55,15 +55,16 @@ export class SerionEngine {
       this.freeCameraController = new FreeCameraController(mainCamera);
 
       // 4. Stress Test Grid
+      // Respetar la escala de 1 unidad = 1 centimetro
       const gridSide = 100;
-      const spacing = 2.0;
+      const spacing = 200.0; // 2 metros
       const offset = (gridSide * spacing) / 2;
 
       for (let i = 0; i < gridSide; i++) {
         for (let j = 0; j < gridSide; j++) {
           const actor = this.activeWorld.spawnActor();
           actor.setPosition((i * spacing) - offset, (j * spacing) - offset, 0);
-          actor.setScale(0.8, 0.8, 0.8);
+          actor.setScale(100, 100, 100); // 1 metro
         }
       }
 
@@ -94,6 +95,9 @@ export class SerionEngine {
     const cubeMesh = this.geometryRegistry.getMesh('Primitive_Cube');
 
     if (activeCamera && cubeMesh) {
+      // AAA Auto-Sync: La cámara siempre sabe la resolución exacta del hardware
+      activeCamera.aspectRatio = this.rhi.getAspectRatio();
+
       const viewProjMat = activeCamera.getViewProjectionMatrix();
       const activeCount = this.activeWorld.getEntityManager().getActiveCount();
 

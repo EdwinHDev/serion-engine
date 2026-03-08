@@ -161,5 +161,13 @@ export class SerionRHI {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  /**
+   * Retorna la relación de aspecto lógica actual de la superficie de renderizado.
+   */
+  public getAspectRatio(): number {
+    if (!this.canvas || this.canvas.clientHeight === 0) return 16 / 9;
+    return this.canvas.clientWidth / this.canvas.clientHeight;
+  }
+
   public getDevice(): GPUDevice { return this.device!; }
 }

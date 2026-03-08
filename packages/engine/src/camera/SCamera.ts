@@ -17,10 +17,11 @@ export class SCamera {
   private viewProjMatrix = new Float32Array(16);
 
   constructor(
+    // Respetar la escala de 1 unidad = 1 centimetro
     public readonly actor: SActor,
     public fov: number = 45,
-    public near: number = 0.1,
-    public far: number = 10000
+    public near: number = 10.0, // 10 cm (evita Z-fighting)
+    public far: number = 1000000.0 // 10 km (distancia AAA)
   ) { }
 
   /**
