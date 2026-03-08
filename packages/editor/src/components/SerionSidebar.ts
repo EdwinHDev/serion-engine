@@ -1,6 +1,6 @@
 /**
  * SerionSidebar Component
- * Functional collapsible panels for Outliner and Details.
+ * Refined visual fidelity for a professional look.
  */
 
 export class SerionSidebar extends HTMLElement {
@@ -39,7 +39,7 @@ export class SerionSidebar extends HTMLElement {
           border-left: 1px solid var(--serion-border);
           height: 100%;
           width: 100%;
-          min-width: 200px; /* Enforce min-width */
+          min-width: 200px;
           overflow: hidden;
         }
 
@@ -47,7 +47,6 @@ export class SerionSidebar extends HTMLElement {
           display: flex;
           flex-direction: column;
           min-height: 0;
-          transition: flex 0.2s ease-in-out;
         }
 
         .panel.expanded {
@@ -64,26 +63,29 @@ export class SerionSidebar extends HTMLElement {
 
         .header {
           background-color: var(--serion-bg-2);
-          padding: 8px 12px;
-          font-weight: 600;
-          font-size: 11px;
+          padding: 10px 14px; /* Increased padding */
+          font-weight: 700;
+          font-size: 10px;
           text-transform: uppercase;
-          color: #fff;
+          letter-spacing: 0.5px;
+          color: var(--serion-text-main); /* Softer white */
           display: flex;
           justify-content: space-between;
           align-items: center;
           cursor: pointer;
           user-select: none;
+          transition: background-color 0.15s;
         }
 
         .header:hover {
-          background-color: #333;
+          background-color: #2e2e2e; /* Subtle hover */
+          color: #fff;
         }
 
         .arrow {
           font-size: 8px;
+          opacity: 0.5;
           transition: transform 0.2s;
-          display: inline-block;
         }
 
         .arrow.collapsed {
@@ -92,7 +94,7 @@ export class SerionSidebar extends HTMLElement {
 
         .content {
           flex: 1;
-          padding: 1rem;
+          padding: 1.25rem;
           overflow-y: auto;
           color: var(--serion-text-dim);
           background-color: var(--serion-bg-1);
@@ -104,11 +106,11 @@ export class SerionSidebar extends HTMLElement {
 
         .empty-state {
           font-style: italic;
-          opacity: 0.5;
+          font-size: 11px;
+          opacity: 0.4;
         }
       </style>
       
-      <!-- Outliner Panel -->
       <div class="panel ${isOutlinerCollapsed ? 'collapsed' : 'expanded'}">
         <div class="header" id="outliner-header">
           Outliner
@@ -119,7 +121,6 @@ export class SerionSidebar extends HTMLElement {
         </div>
       </div>
 
-      <!-- Details Panel -->
       <div class="panel ${isDetailsCollapsed ? 'collapsed' : 'expanded'}">
         <div class="header" id="details-header">
           Details
@@ -131,7 +132,6 @@ export class SerionSidebar extends HTMLElement {
       </div>
     `;
 
-    // Add event listeners
     this.shadowRoot.getElementById('outliner-header')?.addEventListener('click', () => this.togglePanel('outliner'));
     this.shadowRoot.getElementById('details-header')?.addEventListener('click', () => this.togglePanel('details'));
   }

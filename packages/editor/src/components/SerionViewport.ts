@@ -1,33 +1,46 @@
 /**
  * SerionViewport Component
- * The main rendering area for the engine.
+ * Fixed DPI scaling to ensure crisp rendering on high-res displays.
  */
 
 export class SerionViewport extends HTMLElement {
   private resizeObserver: ResizeObserver;
+  private canvas: HTMLCanvasElement | null = null;
 
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this.resizeObserver = new ResizeObserver(entries => {
-      for (let entry of entries) {
-        this.handleResize(entry.contentRect.width, entry.contentRect.height);
-      }
-    });
+    this.resizeObserver = new ResizeObserver(() => this.handleResize());
   }
 
   connectedCallback() {
     this.render();
+    this.canvas = this.shadowRoot?.querySelector('#serion-canvas') as HTMLCanvasElement;
     this.resizeObserver.observe(this);
+    this.handleResize();
   }
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
   }
 
-  private handleResize(width: number, height: number) {
-    // In the future, this will update the WebGPU Renderer's aspect ratio
-    console.log(`Viewport Resized: ${width}x${height}`);
+  private handleResize() {
+    if (!this.canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = this.getBoundingClientRect();
+
+    // Adjust internal resolution based on DPI
+    this.canvas.width = rect.width * dpr;
+    this.canvas.height = rect.height * dpr;
+
+    // Maintain layout size
+    this.canvas.style.width = `${rect.width}px`;
+    this.canvas.style.height = `${rect.height}px`;
+
+    console.log(`Viewport Resized (DPI Adjusted): ${this.canvas.width}x${this.canvas.height}`);
+
+    // Future: Update renderer viewport/camera here
   }
 
   private render() {
@@ -50,6 +63,7 @@ export class SerionViewport extends HTMLElement {
           transform: translate(-50%, -50%);
           text-align: center;
           pointer-events: none;
+          z-index: 10;
         }
 
         .status-text {
@@ -57,12 +71,11 @@ export class SerionViewport extends HTMLElement {
           color: var(--serion-text-dim);
           font-size: 14px;
           letter-spacing: 2px;
-          opacity: 0.5;
+          opacity: 0.3;
+          user-select: none;
         }
 
         canvas {
-          width: 100%;
-          height: 100%;
           display: block;
         }
       </style>
