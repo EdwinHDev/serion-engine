@@ -10,7 +10,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 10: PBR Hemispheric Lighting & Normal Matrix Support.
+ * Capa 10.5: Zero-GC Optimization and 3-Pass DOD Render Builder.
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -26,6 +26,7 @@ export class SerionRHI {
   private cameraBindGroup: GPUBindGroup | null = null;
 
   private depthTexture: GPUTexture | null = null;
+  private depthTextureView: GPUTextureView | null = null;
   private currentWidth = 0;
   private currentHeight = 0;
   private renderPassDescriptor: GPURenderPassDescriptor | null = null;
@@ -71,14 +72,13 @@ export class SerionRHI {
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
 
-    // Pipeline: Layout Entrelazado + Instanced Drawing
+    // Pipeline
     this.renderPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
         entryPoint: 'vs_main',
         buffers: [
-          // Buffer 0: Malla (Pos, Norm, UV) - 32 bytes stride
           {
             arrayStride: 32,
             attributes: [
@@ -87,7 +87,6 @@ export class SerionRHI {
               { shaderLocation: 2, offset: 24, format: 'float32x2' }  // UV
             ]
           },
-          // Buffer 1: Instancias (Model Matrix + Normal Matrix) - 128 bytes stride
           {
             arrayStride: 128,
             stepMode: 'instance',
@@ -109,15 +108,13 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Global Uniform Buffer (144 bytes)
     this.cameraBuffer = this.device.createBuffer({
       size: 144,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
-    // Instance Data Buffer
     this.instanceBuffer = this.device.createBuffer({
-      size: maxEntities * 32 * 4, // 10k entities * 32 floats * 4 bytes
+      size: maxEntities * 32 * 4,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     });
 
@@ -134,7 +131,7 @@ export class SerionRHI {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: this.depthTexture!.createView(),
+        view: this.depthTextureView!,
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -149,9 +146,10 @@ export class SerionRHI {
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
+    this.depthTextureView = this.depthTexture.createView();
   }
 
-  public renderFrame(drawCalls: SDrawCall[], globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
+  public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
     if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -167,10 +165,10 @@ export class SerionRHI {
       this.createDepthTexture(targetW, targetH);
     }
 
-    // 1. Actualizar Uniforms (1 solo write por frame)
+    // 1. Actualizar Uniforms
     this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 144);
 
-    // 2. Actualizar Datos de TODAS las instancias juntas (Zero-Overwrite)
+    // 2. Actualizar Datos de Instancia
     this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
 
     const encoder = this.device.createCommandEncoder();
@@ -178,17 +176,16 @@ export class SerionRHI {
 
     // 3. Obtener textura 1 sola vez por frame
     attachments[0].view = this.context.getCurrentTexture().createView();
-    (this.renderPassDescriptor.depthStencilAttachment as GPURenderPassDepthStencilAttachment).view = this.depthTexture!.createView();
+    (this.renderPassDescriptor.depthStencilAttachment as GPURenderPassDepthStencilAttachment).view = this.depthTextureView!;
 
     const pass = encoder.beginRenderPass(this.renderPassDescriptor);
     pass.setPipeline(this.renderPipeline);
     pass.setBindGroup(0, this.cameraBindGroup!);
 
-    // 4. Ejecutar la Lista de Comandos (Draw Calls)
-    for (const call of drawCalls) {
+    // 4. Ejecutar la Lista de Comandos
+    for (let i = 0; i < activeCallCount; i++) {
+      const call = drawCalls[i];
       pass.setVertexBuffer(0, call.mesh.vertexBuffer);
-
-      // Magia AAA: Usamos el mismo Buffer gigante, pero desplazamos el puntero de lectura
       pass.setVertexBuffer(1, this.instanceBuffer!, call.startOffsetBytes);
       pass.setIndexBuffer(call.mesh.indexBuffer, 'uint16');
       pass.drawIndexed(call.mesh.indexCount, call.count);

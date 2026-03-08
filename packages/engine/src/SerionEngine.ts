@@ -1,4 +1,4 @@
-import { SerionRHI } from './rhi/SerionRHI';
+import { SerionRHI, SDrawCall } from './rhi/SerionRHI';
 import { Logger } from './utils/Logger';
 import { TransformPool } from './memory/TransformPool';
 import { SWorld } from './core/SWorld';
@@ -8,11 +8,10 @@ import { FreeCameraController } from './camera/FreeCameraController';
 import { GeometryRegistry } from './geometry/GeometryRegistry';
 import { SStaticMeshComponent } from './components/SStaticMeshComponent';
 import { SMat4 } from './math/SMath';
-import { SDrawCall } from './rhi/SerionRHI';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
- * Capa 10: Iluminación PBR y Matriz Normal.
+ * Capa 10.5: Zero-GC Optimization y 3-Pass DOD Render Builder.
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
@@ -27,11 +26,14 @@ export class SerionEngine {
 
   private freeCameraController: FreeCameraController | null = null;
 
-  // Buffer temporal para batching (10k entidades * 32 floats [Model + Normal])
+  // Buffers pre-alocados para Zero-GC
   private batchBuffer = new Float32Array(10000 * 32);
-
-  // Buffer Global Environment (144 bytes / 4 = 36 floats)
   private globalEnvData = new Float32Array(36);
+
+  // Pools de apoyo para el 3-Pass Builder
+  private meshInstanceCounts = new Map<string, number>();
+  private meshStartOffsets = new Map<string, number>();
+  private drawCallPool: SDrawCall[] = Array.from({ length: 50 }, () => ({ mesh: null as any, count: 0, startOffsetBytes: 0 }));
 
   constructor() {
     this.rhi = new SerionRHI();
@@ -52,7 +54,7 @@ export class SerionEngine {
       await this.rhi.initialize(canvas, this.transformPool.maxEntities);
       this.geometryRegistry.initialize(this.rhi.getDevice());
 
-      // 1. Configuración de Cámara Showcase
+      // Showcase Camera
       const cameraActor = this.activeWorld.spawnActor();
       cameraActor.setPosition(0, -800, 300);
 
@@ -60,15 +62,12 @@ export class SerionEngine {
       this.cameraManager.setActiveCamera(mainCamera);
       this.freeCameraController = new FreeCameraController(mainCamera);
 
-      // 2. ESCENA SHOWCASE
-
-      // El Suelo (Plane)
+      // --- ESCENA SHOWCASE ---
       const floor = this.activeWorld.spawnActor();
       floor.setScale(2000, 2000, 1);
       floor.setPosition(0, 0, 0);
       floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
 
-      // Las 5 Primitivas Volumétricas
       const meshIds = [
         'Primitive_Cube',
         'Primitive_Sphere',
@@ -88,9 +87,9 @@ export class SerionEngine {
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
 
-      Logger.info('ENGINE', "Capa 10: PBR Lighting ready.");
+      Logger.info('ENGINE', "Capa 10.5: Zero-GC DOD Builder active.");
     } catch (error) {
-      Logger.error('ENGINE', "Fallo crítico al iniciar Engine:", error as any);
+      Logger.error('ENGINE', "Fallo crítico:", error as any);
       throw error;
     }
   }
@@ -100,93 +99,88 @@ export class SerionEngine {
     const deltaTime = (currentTime - this.lastTime) / 1000;
     this.lastTime = currentTime;
 
-    if (this.freeCameraController) {
-      this.freeCameraController.update(deltaTime);
-    }
-
+    if (this.freeCameraController) this.freeCameraController.update(deltaTime);
     this.activeWorld.tick(deltaTime);
 
     const activeCamera = this.cameraManager.getActiveCamera();
     if (activeCamera) {
       activeCamera.aspectRatio = this.rhi.getAspectRatio();
 
-      // --- CONFIGURACIÓN GLOBAL ENVIRONMENT (144 bytes) ---
-      // 1. View Projection Matrix (0-15)
+      // --- GLOBAL ENVIRONMENT ---
       this.globalEnvData.set(activeCamera.getViewProjectionMatrix(), 0);
-
-      // 2. Camera Position (16-18) + Pad (19)
       this.globalEnvData[16] = activeCamera.actor.x;
       this.globalEnvData[17] = activeCamera.actor.y;
       this.globalEnvData[18] = activeCamera.actor.z;
-      this.globalEnvData[19] = 0.0; // Padding
 
-      // 3. Sun Direction (20-22) + Intensity (23)
-      const sunDir = [0.5, 0.5, -1.0];
-      const mag = Math.sqrt(sunDir[0] * sunDir[0] + sunDir[1] * sunDir[1] + sunDir[2] * sunDir[2]);
-      this.globalEnvData[20] = sunDir[0] / mag;
-      this.globalEnvData[21] = sunDir[1] / mag;
-      this.globalEnvData[22] = sunDir[2] / mag;
-      this.globalEnvData[23] = 100000.0; // 100k Lux
+      // Sun (Zero-GC Math)
+      const sunX = 0.5, sunY = 0.5, sunZ = -1.0;
+      const mag = Math.sqrt(sunX * sunX + sunY * sunY + sunZ * sunZ);
+      this.globalEnvData[20] = sunX / mag;
+      this.globalEnvData[21] = sunY / mag;
+      this.globalEnvData[22] = sunZ / mag;
+      this.globalEnvData[23] = 100000.0; // Lux
 
-      // 4. Sun Color (24-26) + Ambient Intensity (27)
-      this.globalEnvData[24] = 1.0;
-      this.globalEnvData[25] = 0.95;
-      this.globalEnvData[26] = 0.9;
-      this.globalEnvData[27] = 1.0;
+      this.globalEnvData[24] = 1.0; this.globalEnvData[25] = 0.95; this.globalEnvData[26] = 0.9;
+      this.globalEnvData[27] = 1.0; // Ambient Int
+      this.globalEnvData[28] = 0.2; this.globalEnvData[29] = 0.4; this.globalEnvData[30] = 0.8;
+      this.globalEnvData[32] = 0.1; this.globalEnvData[33] = 0.08; this.globalEnvData[34] = 0.05;
 
-      // 5. Sky Color (28-30) + Pad (31)
-      this.globalEnvData[28] = 0.2;
-      this.globalEnvData[29] = 0.4;
-      this.globalEnvData[30] = 0.8;
-      this.globalEnvData[31] = 0.0;
-
-      // 6. Ground Color (32-34) + Pad (35)
-      this.globalEnvData[32] = 0.1;
-      this.globalEnvData[33] = 0.08;
-      this.globalEnvData[34] = 0.05;
-      this.globalEnvData[35] = 0.0;
-
-      // --- BATCH RENDERING (Zero-GC Optimized) ---
+      // --- BATCH RENDERING (3-Pass DOD Linear Builder) ---
       const rawTransforms = this.transformPool.getRawData();
       const actors = this.activeWorld.getActors();
-      const drawCalls: SDrawCall[] = [];
-      let totalInstances = 0;
 
+      // Pass 1: Contar instancias por malla (O(A))
       for (const mesh of this.geometryRegistry.getMeshes()) {
-        let count = 0;
-        const startOffsetBytes = totalInstances * 128; // 32 floats * 4 bytes
-
-        for (const actor of actors.values()) {
-          if (actor.staticMesh?.meshId === mesh.id) {
-            const trOffset = actor.id * 16;
-            const targetOffset = totalInstances * 32;
-
-            // 1. Construir Matriz de Modelo real (16 floats) desde los componentes DOD
-            // El pool tiene: [Pos_xyz (3), Rot_xyzw (4), Scale_xyz (3), Pad (6)] = 16 floats
-            SMat4.fromRotationTranslationScale(
-              this.batchBuffer,
-              rawTransforms.subarray(trOffset + 3, trOffset + 7), // Rotación
-              rawTransforms.subarray(trOffset, trOffset + 3),     // Posición
-              rawTransforms.subarray(trOffset + 7, trOffset + 10), // Escala
-              targetOffset
-            );
-
-            // 2. Calcular Matriz Normal (Inverse Transpose) - 16 floats
-            SMat4.invertTranspose4x4(this.batchBuffer, this.batchBuffer, targetOffset + 16, targetOffset);
-
-            totalInstances++;
-            count++;
-          }
+        this.meshInstanceCounts.set(mesh.id, 0);
+      }
+      for (const actor of actors.values()) {
+        if (actor.staticMesh) {
+          const id = actor.staticMesh.meshId;
+          this.meshInstanceCounts.set(id, (this.meshInstanceCounts.get(id) || 0) + 1);
         }
+      }
 
+      // Pass 2: Asignar offsets y armar DrawCalls (O(M))
+      let totalInstances = 0;
+      let activeDrawCallCount = 0;
+      for (const mesh of this.geometryRegistry.getMeshes()) {
+        const count = this.meshInstanceCounts.get(mesh.id) || 0;
         if (count > 0) {
-          drawCalls.push({ mesh, count, startOffsetBytes });
+          const startOffsetFloats = totalInstances * 32;
+          this.meshStartOffsets.set(mesh.id, startOffsetFloats);
+
+          const drawCall = this.drawCallPool[activeDrawCallCount];
+          drawCall.mesh = mesh;
+          drawCall.count = count;
+          drawCall.startOffsetBytes = startOffsetFloats * 4;
+          activeDrawCallCount++;
+
+          totalInstances += count;
+        }
+      }
+
+      // Pass 3: Rellenar Buffer Secuencialmente (O(A))
+      for (const actor of actors.values()) {
+        if (actor.staticMesh) {
+          const id = actor.staticMesh.meshId;
+          const targetOffset = this.meshStartOffsets.get(id)!;
+
+          SMat4.fromRotationTranslationScale(
+            this.batchBuffer,
+            rawTransforms.subarray(actor.id * 16 + 3, actor.id * 16 + 7), // Rot
+            rawTransforms.subarray(actor.id * 16, actor.id * 16 + 3),      // Pos
+            rawTransforms.subarray(actor.id * 16 + 7, actor.id * 16 + 10), // Scale
+            targetOffset
+          );
+          SMat4.invertTranspose4x4(this.batchBuffer, this.batchBuffer, targetOffset + 16, targetOffset);
+
+          this.meshStartOffsets.set(id, targetOffset + 32);
         }
       }
 
       if (totalInstances > 0) {
         const activeView = this.batchBuffer.subarray(0, totalInstances * 32);
-        this.rhi.renderFrame(drawCalls, this.globalEnvData, activeView);
+        this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvData, activeView);
       }
     }
 
