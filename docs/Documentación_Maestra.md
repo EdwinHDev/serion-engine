@@ -7,12 +7,12 @@ Serion Engine es un motor de videojuegos profesional basado en la web, inspirado
 ### 2. Pilares de Desarrollo (Mandamientos)
 1. **SOLID sobre Conveniencia:** No se sacrificará la arquitectura por rapidez. Cada clase tiene una única responsabilidad.
 2. **Clean Code:** Nombramiento semántico, funciones pequeñas y código auto-documentado.
-3. **Decoupling (Desacoplamiento):** El `Core` no conoce al `Editor`. La comunicación es mediante interfaces y eventos.
+3. **Decoupling (Desacoplamiento):** El `Engine` no conoce al `Editor`. La comunicación es mediante interfaces y eventos.
 4. **Performance First:** Uso de `TypedArrays`, `Web Workers` y gestión manual de buffers en WebGPU para evitar el Garbage Collector.
 
 ### 3. Estructura de Monorepo (Workspaces)
 El proyecto se organiza en paquetes independientes bajo la raíz:
-- `/packages/core`: El corazón del motor (Math, RHI, ECS, Scene Graph).
+- `/packages/engine`: El corazón del motor (Math, RHI, ECS, Scene Graph).
 - `/packages/editor`: La herramienta de autoría (Web Components, UI, Gizmos).
 - `/packages/templates`: Lógica de juego predefinida (FPS, TPS, Empty).
 
