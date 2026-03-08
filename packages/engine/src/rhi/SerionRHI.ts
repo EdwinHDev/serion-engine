@@ -4,11 +4,13 @@ import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
  * Abstracción de WebGPU siguiendo principios SOLID.
+ * Soporte para gestión dinámica de resolución y Depth Testing.
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
+  private canvas: HTMLCanvasElement | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
 
   // [PIPELINES]: Estados de renderizado pre-compilados
@@ -30,6 +32,8 @@ export class SerionRHI {
    * Inicializa el hardware gráfico y configura el contexto.
    */
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
+    this.canvas = canvas;
+
     if (!navigator.gpu) {
       Logger.fatal('RHI', "WebGPU no soportado.");
       throw new Error("WebGPU no soportado.");
@@ -49,7 +53,7 @@ export class SerionRHI {
 
     this.format = navigator.gpu.getPreferredCanvasFormat();
 
-    // Manejo de DPI
+    // Configuración Inicial de resolución
     const devicePixelRatio = window.devicePixelRatio || 1;
     canvas.width = canvas.clientWidth * devicePixelRatio;
     canvas.height = canvas.clientHeight * devicePixelRatio;
@@ -60,12 +64,8 @@ export class SerionRHI {
       alphaMode: 'premultiplied',
     });
 
-    // --- 1. Crear Textura de Profundidad (Z-Buffer) ---
-    this.depthTexture = this.device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
+    // --- 1. Crear Textura de Profundidad ---
+    this.createDepthTexture(canvas.width, canvas.height);
 
     // --- 2. Definir Bind Group Layouts ---
     const cameraLayout = this.device.createBindGroupLayout({
@@ -126,7 +126,7 @@ export class SerionRHI {
       entries: [{ binding: 0, resource: { buffer: this.transformBuffer } }]
     });
 
-    // --- 6. Descriptor (Zero GC) ---
+    // --- 6. Descriptor ---
     this.renderPassDescriptor = {
       colorAttachments: [{
         view: null as unknown as GPUTextureView,
@@ -135,7 +135,7 @@ export class SerionRHI {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: this.depthTexture.createView(),
+        view: this.depthTexture!.createView(),
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -144,22 +144,63 @@ export class SerionRHI {
   }
 
   /**
-   * Renderiza el frame actual.
+   * Crea o recrea la textura de profundidad (Z-Buffer).
+   */
+  private createDepthTexture(width: number, height: number): void {
+    if (this.depthTexture) {
+      this.depthTexture.destroy();
+    }
+
+    this.depthTexture = this.device!.createTexture({
+      label: 'Depth Texture',
+      size: [width, height],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+  }
+
+  /**
+   * Renderiza el frame actual y gestiona el redimensionamiento dinámico.
    */
   public renderFrame(transformArray: Float32Array, instanceCount: number, viewProj: Float32Array): void {
-    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline ||
-      !this.cameraBuffer || !this.transformBuffer || !this.cameraBindGroup || !this.transformBindGroup || !this.depthTexture) return;
+    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
-    // Actualizar VRAM
+    // --- GESTIÓN DINÁMICA DE RESOLUCIÓN ---
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.floor(this.canvas.clientWidth * dpr);
+    const targetH = Math.floor(this.canvas.clientHeight * dpr);
+
+    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+
+      // Reconfigurar Contexto
+      this.context.configure({
+        device: this.device,
+        format: this.format,
+        alphaMode: 'premultiplied',
+      });
+
+      // Recrear Depth Texture para que coincida con el color attachment
+      this.createDepthTexture(targetW, targetH);
+
+      // Actualizar el descriptor con la nueva vista de profundidad
+      (this.renderPassDescriptor.depthStencilAttachment as GPURenderPassDepthStencilAttachment).view =
+        this.depthTexture!.createView();
+
+      Logger.info('RHI', `Recursos gráficos redimensionados a: ${targetW}x${targetH}`);
+    }
+
+    // Actualizar VRAM (Cámara y Transformaciones)
     this.device.queue.writeBuffer(
-      this.cameraBuffer,
+      this.cameraBuffer!,
       0,
       viewProj.buffer as ArrayBuffer,
       viewProj.byteOffset,
       viewProj.byteLength
     );
     this.device.queue.writeBuffer(
-      this.transformBuffer,
+      this.transformBuffer!,
       0,
       transformArray.buffer as ArrayBuffer,
       transformArray.byteOffset,
@@ -170,13 +211,10 @@ export class SerionRHI {
     const attachments = this.renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
     attachments[0].view = this.context.getCurrentTexture().createView();
 
-    // El depthView debe estar disponible en el descriptor (podemos reutilizarlo si no cambia el canvas)
-    // Pero por seguridad en redimensionamientos futuros lo podríamos actualizar aquí.
-
     const pass = encoder.beginRenderPass(this.renderPassDescriptor);
     pass.setPipeline(this.renderPipeline);
-    pass.setBindGroup(0, this.cameraBindGroup);
-    pass.setBindGroup(1, this.transformBindGroup);
+    pass.setBindGroup(0, this.cameraBindGroup!);
+    pass.setBindGroup(1, this.transformBindGroup!);
     pass.draw(3, instanceCount);
     pass.end();
 
