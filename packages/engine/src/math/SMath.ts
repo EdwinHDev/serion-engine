@@ -113,4 +113,59 @@ export class SMat4 {
     out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
     out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
   }
+
+  /**
+   * Calcula la Transpuesta Inversa de una matriz 4x4 (Matriz Normal).
+   * out = transpose(inverse(a)).
+   */
+  public static invertTranspose4x4(out: Float32Array, a: Float32Array, outOffset = 0, aOffset = 0): boolean {
+    const a00 = a[aOffset + 0], a01 = a[aOffset + 1], a02 = a[aOffset + 2], a03 = a[aOffset + 3];
+    const a10 = a[aOffset + 4], a11 = a[aOffset + 5], a12 = a[aOffset + 6], a13 = a[aOffset + 7];
+    const a20 = a[aOffset + 8], a21 = a[aOffset + 9], a22 = a[aOffset + 10], a23 = a[aOffset + 11];
+    const a30 = a[aOffset + 12], a31 = a[aOffset + 13], a32 = a[aOffset + 14], a33 = a[aOffset + 15];
+
+    const b00 = a00 * a11 - a01 * a10;
+    const b01 = a00 * a12 - a02 * a10;
+    const b02 = a00 * a13 - a03 * a10;
+    const b03 = a01 * a12 - a02 * a11;
+    const b04 = a01 * a13 - a03 * a11;
+    const b05 = a02 * a13 - a03 * a12;
+    const b06 = a20 * a31 - a21 * a30;
+    const b07 = a20 * a32 - a22 * a30;
+    const b08 = a20 * a33 - a23 * a30;
+    const b09 = a21 * a32 - a22 * a31;
+    const b10 = a21 * a33 - a23 * a31;
+    const b11 = a22 * a33 - a23 * a32;
+
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+    if (!det) {
+      this.identity(out.subarray(outOffset, outOffset + 16));
+      return false;
+    }
+    det = 1.0 / det;
+
+    // Inverse Transpose components
+    out[outOffset + 0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+    out[outOffset + 4] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+    out[outOffset + 8] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+    out[outOffset + 12] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+
+    out[outOffset + 1] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+    out[outOffset + 5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+    out[outOffset + 9] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+    out[outOffset + 13] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+
+    out[outOffset + 2] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+    out[outOffset + 6] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+    out[outOffset + 10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+    out[outOffset + 14] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+
+    out[outOffset + 3] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+    out[outOffset + 7] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+    out[outOffset + 11] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+    out[outOffset + 15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+
+    return true;
+  }
 }

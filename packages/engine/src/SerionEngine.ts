@@ -7,10 +7,11 @@ import { SCamera } from './camera/SCamera';
 import { FreeCameraController } from './camera/FreeCameraController';
 import { GeometryRegistry } from './geometry/GeometryRegistry';
 import { SStaticMeshComponent } from './components/SStaticMeshComponent';
+import { SMat4 } from './math/SMath';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
- * Capa 9: Batch Rendering y Escena Showcase.
+ * Capa 10: Iluminación PBR y Matriz Normal.
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
@@ -25,8 +26,11 @@ export class SerionEngine {
 
   private freeCameraController: FreeCameraController | null = null;
 
-  // Buffer temporal para batching de instancias (10k entidades * 16 floats)
-  private batchBuffer = new Float32Array(10000 * 16);
+  // Buffer temporal para batching (10k entidades * 32 floats [Model + Normal])
+  private batchBuffer = new Float32Array(10000 * 32);
+
+  // Buffer Global Environment (144 bytes / 4 = 36 floats)
+  private globalEnvData = new Float32Array(36);
 
   constructor() {
     this.rhi = new SerionRHI();
@@ -83,7 +87,7 @@ export class SerionEngine {
       this.lastTime = performance.now();
       this.animationFrameId = requestAnimationFrame(this.loop);
 
-      Logger.info('ENGINE', "Showcase ready. Batch Rendering active.");
+      Logger.info('ENGINE', "Capa 10: PBR Lighting ready.");
     } catch (error) {
       Logger.error('ENGINE', "Fallo crítico al iniciar Engine:", error as any);
       throw error;
@@ -104,31 +108,71 @@ export class SerionEngine {
     const activeCamera = this.cameraManager.getActiveCamera();
     if (activeCamera) {
       activeCamera.aspectRatio = this.rhi.getAspectRatio();
-      const viewProjMat = activeCamera.getViewProjectionMatrix();
 
-      // --- BATCH RENDERING (Zero-GC Optimized) ---
+      // --- CONFIGURACIÓN GLOBAL ENVIRONMENT (144 bytes) ---
+      // 1. View Projection Matrix (0-15)
+      this.globalEnvData.set(activeCamera.getViewProjectionMatrix(), 0);
+
+      // 2. Camera Position (16-18) + Pad (19)
+      this.globalEnvData[16] = activeCamera.actor.x;
+      this.globalEnvData[17] = activeCamera.actor.y;
+      this.globalEnvData[18] = activeCamera.actor.z;
+      this.globalEnvData[19] = 0.0; // Padding
+
+      // 3. Sun Direction (20-22) + Intensity (23)
+      // Sol al cenit inclinado (Z-Up)
+      const sunDir = [0.5, 0.5, -1.0];
+      const mag = Math.sqrt(sunDir[0] * sunDir[0] + sunDir[1] * sunDir[1] + sunDir[2] * sunDir[2]);
+      this.globalEnvData[20] = sunDir[0] / mag;
+      this.globalEnvData[21] = sunDir[1] / mag;
+      this.globalEnvData[22] = sunDir[2] / mag;
+      this.globalEnvData[23] = 100000.0; // 100k Lux
+
+      // 4. Sun Color (24-26) + Ambient Intensity (27)
+      this.globalEnvData[24] = 1.0;  // R
+      this.globalEnvData[25] = 0.95; // G
+      this.globalEnvData[26] = 0.9;  // B
+      this.globalEnvData[27] = 1.0;  // Ambient Int
+
+      // 5. Sky Color (28-30) + Pad (31)
+      this.globalEnvData[28] = 0.2; // R
+      this.globalEnvData[29] = 0.4; // G
+      this.globalEnvData[30] = 0.8; // B
+      this.globalEnvData[31] = 0.0; // Pad
+
+      // 6. Ground Color (32-34) + Pad (35)
+      this.globalEnvData[32] = 0.1;  // R
+      this.globalEnvData[33] = 0.08; // G
+      this.globalEnvData[34] = 0.05; // B
+      this.globalEnvData[35] = 0.0;  // Pad
+
+      // --- BATCH RENDERING ---
       const rawTransforms = this.transformPool.getRawData();
       const actors = this.activeWorld.getActors();
 
-      // Iteramos directamente sobre los valores (Zero Array Allocation)
       for (const mesh of this.geometryRegistry.getMeshes()) {
         let instanceCount = 0;
 
         for (const actor of actors.values()) {
           if (actor.staticMesh?.meshId === mesh.id) {
-            const sourceOffset = actor.id * 16;
-            const targetOffset = instanceCount * 16;
+            const trOffset = actor.id * 16;
+            const targetOffset = instanceCount * 32;
 
+            // 1. Copiar Matriz de Modelo (16 floats)
             for (let m = 0; m < 16; m++) {
-              this.batchBuffer[targetOffset + m] = rawTransforms[sourceOffset + m];
+              this.batchBuffer[targetOffset + m] = rawTransforms[trOffset + m];
             }
+
+            // 2. Calcular Matriz Normal (Inverse Transpose) - 16 floats
+            SMat4.invertTranspose4x4(this.batchBuffer, rawTransforms, targetOffset + 16, trOffset);
+
             instanceCount++;
           }
         }
 
         if (instanceCount > 0) {
-          const activeData = this.batchBuffer.subarray(0, instanceCount * 16);
-          this.rhi.renderFrame(activeData, instanceCount, viewProjMat, mesh);
+          const activeView = this.batchBuffer.subarray(0, instanceCount * 32);
+          this.rhi.renderFrame(activeView, instanceCount, this.globalEnvData, mesh);
         }
       }
     }
