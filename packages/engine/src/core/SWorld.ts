@@ -26,7 +26,8 @@ export class SWorld {
   public spawnActor(): SActor {
     const id = this.entityManager.createEntity();
     const actor = new SActor(id, this.engine);
-    this.actors.set(id, actor);
+    // this.actors.set(id, actor);
+    this.actors.set(actor.id, actor);
     return actor;
   }
 

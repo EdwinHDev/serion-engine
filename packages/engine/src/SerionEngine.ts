@@ -74,7 +74,7 @@ export class SerionEngine {
 
       for (let i = 0; i < meshIds.length; i++) {
         const actor = this.activeWorld.spawnActor();
-        actor.setPosition((i - 2) * 200, 0, 100);
+        actor.setPosition((i - 2) * 200, 0, 150);
         actor.setScale(100, 100, 100);
         actor.staticMesh = new SStaticMeshComponent(meshIds[i]);
       }
@@ -131,7 +131,9 @@ export class SerionEngine {
         }
 
         if (instanceCount > 0) {
-          this.rhi.renderFrame(this.batchBuffer, instanceCount, viewProjMat, mesh);
+          const activeData = this.batchBuffer.subarray(0, instanceCount * 16);
+          this.rhi.renderFrame(activeData, instanceCount, viewProjMat, mesh);
+          // this.rhi.renderFrame(this.batchBuffer, instanceCount, viewProjMat, mesh);
         }
       }
     }
