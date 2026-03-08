@@ -106,20 +106,16 @@ export class SerionEngine {
       activeCamera.aspectRatio = this.rhi.getAspectRatio();
       const viewProjMat = activeCamera.getViewProjectionMatrix();
 
-      // --- BATCH RENDERING ---
-      const meshIds = this.geometryRegistry.getMeshIds();
+      // --- BATCH RENDERING (Zero-GC Optimized) ---
       const rawTransforms = this.transformPool.getRawData();
       const actors = this.activeWorld.getActors();
 
-      for (const meshId of meshIds) {
-        const mesh = this.geometryRegistry.getMesh(meshId);
-        if (!mesh) continue;
-
+      // Iteramos directamente sobre los valores (Zero Array Allocation)
+      for (const mesh of this.geometryRegistry.getMeshes()) {
         let instanceCount = 0;
 
-        // Iterar sobre todos los actores del mundo
         for (const actor of actors.values()) {
-          if (actor.staticMesh?.meshId === meshId) {
+          if (actor.staticMesh?.meshId === mesh.id) {
             const sourceOffset = actor.id * 16;
             const targetOffset = instanceCount * 16;
 
@@ -133,7 +129,6 @@ export class SerionEngine {
         if (instanceCount > 0) {
           const activeData = this.batchBuffer.subarray(0, instanceCount * 16);
           this.rhi.renderFrame(activeData, instanceCount, viewProjMat, mesh);
-          // this.rhi.renderFrame(this.batchBuffer, instanceCount, viewProjMat, mesh);
         }
       }
     }

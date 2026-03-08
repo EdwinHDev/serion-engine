@@ -250,8 +250,8 @@ export class GeometryRegistry {
     this.meshes.set(id, new SStaticMesh(id, vb, ib, indices.length));
   }
 
-  public getMeshIds(): string[] {
-    return Array.from(this.meshes.keys());
+  public getMeshes(): IterableIterator<SStaticMesh> {
+    return this.meshes.values();
   }
 
   public getMesh(id: string): SStaticMesh | undefined {
