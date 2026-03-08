@@ -5,9 +5,12 @@ import { Logger } from '../utils/Logger';
  */
 export class EntityManager {
   private availableIds: number[] = [];
+  private isAvailable: Uint8Array;
   private nextId: number = 0;
 
-  constructor(private readonly maxEntities: number) { }
+  constructor(private readonly maxEntities: number) {
+    this.isAvailable = new Uint8Array(maxEntities);
+  }
 
   /**
    * Crea una nueva entidad obteniendo un ID del pool o incrementando el contador.
@@ -15,7 +18,9 @@ export class EntityManager {
   public createEntity(): number {
     // 1. Intentar reciclar un ID
     if (this.availableIds.length > 0) {
-      return this.availableIds.pop()!;
+      const id = this.availableIds.pop()!;
+      this.isAvailable[id] = 0;
+      return id;
     }
 
     // 2. Si no hay reciclables, usar el siguiente ID
@@ -32,9 +37,10 @@ export class EntityManager {
    * Libera un ID para su posterior reciclaje.
    */
   public destroyEntity(id: number): void {
-    // Evitar duplicados en el pool de reciclaje si se llama dos veces
-    if (!this.availableIds.includes(id)) {
+    // O(1) check using availability map
+    if (this.isAvailable[id] === 0) {
       this.availableIds.push(id);
+      this.isAvailable[id] = 1;
     }
   }
 

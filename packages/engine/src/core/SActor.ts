@@ -7,6 +7,13 @@ interface IEngineProxy {
     getPositionY(id: number): number;
     getPositionZ(id: number): number;
     setPosition(id: number, x: number, y: number, z: number): void;
+
+    getRotationX(id: number): number;
+    getRotationY(id: number): number;
+    getRotationZ(id: number): number;
+    getRotationW(id: number): number;
+    setRotation(id: number, x: number, y: number, z: number, w: number): void;
+
     getScaleX(id: number): number;
     getScaleY(id: number): number;
     getScaleZ(id: number): number;
@@ -44,6 +51,27 @@ export class SActor {
    */
   public setPosition(x: number, y: number, z: number): void {
     this.engine.transformPool.setPosition(this.id, x, y, z);
+  }
+
+  // --- ACCESSORS DE ROTACIÓN (CUATERNIONES) ---
+
+  public get rotationX(): number { return this.engine.transformPool.getRotationX(this.id); }
+  public set rotationX(val: number) { this.engine.transformPool.setRotation(this.id, val, this.rotationY, this.rotationZ, this.rotationW); }
+
+  public get rotationY(): number { return this.engine.transformPool.getRotationY(this.id); }
+  public set rotationY(val: number) { this.engine.transformPool.setRotation(this.id, this.rotationX, val, this.rotationZ, this.rotationW); }
+
+  public get rotationZ(): number { return this.engine.transformPool.getRotationZ(this.id); }
+  public set rotationZ(val: number) { this.engine.transformPool.setRotation(this.id, this.rotationX, this.rotationY, val, this.rotationW); }
+
+  public get rotationW(): number { return this.engine.transformPool.getRotationW(this.id); }
+  public set rotationW(val: number) { this.engine.transformPool.setRotation(this.id, this.rotationX, this.rotationY, this.rotationZ, val); }
+
+  /**
+   * Setea la rotación completa en una sola llamada.
+   */
+  public setRotation(x: number, y: number, z: number, w: number): void {
+    this.engine.transformPool.setRotation(this.id, x, y, z, w);
   }
 
   // --- ACCESSORS DE ESCALA ---
