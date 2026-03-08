@@ -7,3 +7,5 @@ export * from './SerionEngine';
 export * from './rhi/SerionRHI';
 export * from './utils/Logger';
 export * from './memory/TransformPool';
+export * from './core/SActor';
+export * from './core/EntityManager';

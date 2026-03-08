@@ -1,6 +1,8 @@
 import { SerionRHI } from './rhi/SerionRHI';
 import { Logger } from './utils/Logger';
 import { TransformPool } from './memory/TransformPool';
+import { EntityManager } from './core/EntityManager';
+import { SActor } from './core/SActor';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
@@ -8,6 +10,7 @@ import { TransformPool } from './memory/TransformPool';
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
+  public readonly entityManager: EntityManager;
   private rhi: SerionRHI;
   private isRunning: boolean = false;
   private lastTime: number = 0;
@@ -20,8 +23,20 @@ export class SerionEngine {
     const maxEntities = 10000;
     this.transformPool = new TransformPool(maxEntities);
 
+    // Inicializar Gestor de Entidades (Capa 2 - ECS Híbrido)
+    this.entityManager = new EntityManager(maxEntities);
+
     const memoryKB = (this.transformPool.getByteSize()) / 1024;
     Logger.info('ENGINE', `TransformPool inicializado: ${memoryKB} KB para ${maxEntities} entidades.`);
+  }
+
+  /**
+   * Crea un nuevo actor en el mundo.
+   * Método de conveniencia que utiliza el EntityManager y retorna un Proxy.
+   */
+  public spawnActor(): SActor {
+    const id = this.entityManager.createEntity();
+    return new SActor(id, this);
   }
 
   /**
