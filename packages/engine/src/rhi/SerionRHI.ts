@@ -1,3 +1,5 @@
+import { Logger } from '../utils/Logger';
+
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
  * Abstracción de WebGPU siguiendo principios SOLID.
@@ -17,7 +19,9 @@ export class SerionRHI {
    */
   public async initialize(canvas: HTMLCanvasElement): Promise<void> {
     if (!navigator.gpu) {
-      throw new Error("WebGPU no está soportado en este navegador.");
+      const msg = "WebGPU no está soportado en este navegador.";
+      Logger.fatal('RHI', msg);
+      throw new Error(msg);
     }
 
     // 1. Solicitar Adaptador
@@ -26,20 +30,30 @@ export class SerionRHI {
     });
 
     if (!this.adapter) {
-      throw new Error("No se pudo encontrar un adaptador de GPU compatible.");
+      const msg = "No se pudo encontrar un adaptador de GPU compatible.";
+      Logger.fatal('RHI', msg);
+      throw new Error(msg);
     }
+
+    // [AUDITORÍA DE HARDWARE]: Extraer información real de la GPU (API Moderna).
+    // const adapterInfo = this.adapter.info;
+    // Logger.info('RHI', `Hardware de Video: ${adapterInfo.vendor} - ${adapterInfo.architecture}`);
 
     // 2. Solicitar Dispositivo
     this.device = await this.adapter.requestDevice();
 
     if (!this.device) {
-      throw new Error("No se pudo instanciar el dispositivo lógico de la GPU.");
+      const msg = "No se pudo instanciar el dispositivo lógico de la GPU.";
+      Logger.fatal('RHI', msg);
+      throw new Error(msg);
     }
 
     // 3. Configurar el Contexto del Canvas
     this.context = canvas.getContext('webgpu');
     if (!this.context) {
-      throw new Error("No se pudo obtener el contexto WebGPU del canvas.");
+      const msg = "No se pudo obtener el contexto WebGPU del canvas.";
+      Logger.fatal('RHI', msg);
+      throw new Error(msg);
     }
 
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -67,7 +81,7 @@ export class SerionRHI {
       ],
     };
 
-    console.log(`Serion RHI inicializado a ${canvas.width}x${canvas.height} (DPI: ${devicePixelRatio})`);
+    // Logger.info('RHI', `Inicializado a ${canvas.width}x${canvas.height} (DPI: ${devicePixelRatio})`);
   }
 
   /**
@@ -79,6 +93,7 @@ export class SerionRHI {
    */
   public clearScreen(r: number, g: number, b: number, a: number): void {
     if (!this.device || !this.context || !this.renderPassDescriptor) {
+      Logger.error('RHI', "Intento de clearScreen sin inicializar.");
       throw new Error("RHI no inicializado. Llama a initialize() primero.");
     }
 
@@ -105,7 +120,10 @@ export class SerionRHI {
    * Obtiene el dispositivo GPU actual.
    */
   public getDevice(): GPUDevice {
-    if (!this.device) throw new Error("GPUDevice no inicializado.");
+    if (!this.device) {
+      Logger.error('RHI', "GET DEVICE - No inicializado");
+      throw new Error("GPUDevice no inicializado.");
+    }
     return this.device;
   }
 }

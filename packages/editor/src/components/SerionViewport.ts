@@ -1,4 +1,4 @@
-import { SerionEngine } from '@serion/engine';
+import { SerionEngine, Logger } from '@serion/engine';
 
 /**
  * SerionViewport Component
@@ -71,8 +71,6 @@ export class SerionViewport extends HTMLElement {
     // Maintain layout size
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
-
-    console.log(`Viewport Resized (DPI Adjusted): ${this.canvas.width}x${this.canvas.height}`);
 
     // Future: Update renderer viewport/camera here
   }

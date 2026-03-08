@@ -42,4 +42,4 @@ document.body.appendChild(dropdown);
 const modePanel = document.createElement('serion-mode-panel');
 document.body.appendChild(modePanel);
 
-console.log('Serion Editor initialized successfully.');
+// console.log('Serion Editor initialized successfully.');

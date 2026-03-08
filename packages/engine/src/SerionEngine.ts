@@ -1,4 +1,5 @@
 import { SerionRHI } from './rhi/SerionRHI';
+import { Logger } from './utils/Logger';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
@@ -22,7 +23,7 @@ export class SerionEngine {
     try {
       if (this.isRunning) return;
 
-      console.log("Iniciando Serion Engine...");
+      Logger.info('ENGINE', "Iniciando Serion Engine...");
 
       // 1. Inicializar Capa 0 (Hardware & RHI)
       await this.rhi.initialize(canvas);
@@ -34,9 +35,9 @@ export class SerionEngine {
       // 3. Iniciar el Bucle Principal
       this.animationFrameId = requestAnimationFrame(this.loop);
 
-      console.log("Serion Engine iniciado correctamente.");
+      Logger.info('ENGINE', "Serion Engine iniciado correctamente.");
     } catch (error) {
-      console.error("Fallo crítico al iniciar Serion Engine:", error);
+      Logger.error('ENGINE', "Fallo crítico al iniciar Serion Engine:", error as any);
       this.isRunning = false;
       throw error;
     }
@@ -51,7 +52,7 @@ export class SerionEngine {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = 0;
     }
-    console.log("Serion Engine detenido.");
+    Logger.info('ENGINE', "Serion Engine detenido.");
   }
 
   /**
