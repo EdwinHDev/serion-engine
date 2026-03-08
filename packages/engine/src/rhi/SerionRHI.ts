@@ -14,141 +14,123 @@ export class SerionRHI {
   // [PIPELINES]: Estados de renderizado pre-compilados
   private renderPipeline: GPURenderPipeline | null = null;
 
-  // [RECURSOS GPU]: Buffers y BindGroups para comunicación con Shaders
+  // [RECURSOS GPU]: Buffers y BindGroups
+  private cameraBuffer: GPUBuffer | null = null;
   private transformBuffer: GPUBuffer | null = null;
-  private bindGroup: GPUBindGroup | null = null;
+  private cameraBindGroup: GPUBindGroup | null = null;
+  private transformBindGroup: GPUBindGroup | null = null;
 
-  // [PERFORMANCE]: Descriptor pre-asignado para evitar GC durante el loop de renderizado.
+  // [PERFORMANCE]: Descriptor pre-asignado (Zero GC)
   private renderPassDescriptor: GPURenderPassDescriptor | null = null;
 
   /**
-   * Inicializa el hardware gráfico y configura el contexto del canvas.
-   * @param canvas El elemento HTMLCanvasElement que servirá como viewport.
-   * @param maxEntities Límite de entidades para dimensionar los buffers de VRAM.
+   * Inicializa el hardware gráfico y configura el contexto.
    */
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     if (!navigator.gpu) {
-      const msg = "WebGPU no está soportado en este navegador.";
-      Logger.fatal('RHI', msg);
-      throw new Error(msg);
+      Logger.fatal('RHI', "WebGPU no soportado.");
+      throw new Error("WebGPU no soportado.");
     }
 
-    // 1. Solicitar Adaptador
-    this.adapter = await navigator.gpu.requestAdapter({
-      powerPreference: 'high-performance',
-    });
+    this.adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!this.adapter) throw new Error("No adapter found.");
 
-    if (!this.adapter) {
-      const msg = "No se pudo encontrar un adaptador de GPU compatible.";
-      Logger.fatal('RHI', msg);
-      throw new Error(msg);
-    }
-
-    // [AUDITORÍA DE HARDWARE]: Identificar la GPU real asignada por el sistema.
     const adapterInfo = this.adapter.info;
-    Logger.info('RHI', `Hardware de Video: ${adapterInfo.vendor} - ${adapterInfo.architecture}`);
+    Logger.info('RHI', `Hardware: ${adapterInfo.vendor} - ${adapterInfo.architecture}`);
 
-    // 2. Solicitar Dispositivo
     this.device = await this.adapter.requestDevice();
+    if (!this.device) throw new Error("No device found.");
 
-    if (!this.device) {
-      const msg = "No se pudo instanciar el dispositivo lógico de la GPU.";
-      Logger.fatal('RHI', msg);
-      throw new Error(msg);
-    }
-
-    // 3. Configurar el Contexto del Canvas
     this.context = canvas.getContext('webgpu');
-    if (!this.context) {
-      const msg = "No se pudo obtener el contexto WebGPU del canvas.";
-      Logger.fatal('RHI', msg);
-      throw new Error(msg);
-    }
+    if (!this.context) throw new Error("No context found.");
 
     this.format = navigator.gpu.getPreferredCanvasFormat();
-
-    // Manejo de DPI (Device Pixel Ratio) para nitidez absoluta
-    const devicePixelRatio = window.devicePixelRatio || 1;
-    canvas.width = canvas.clientWidth * devicePixelRatio;
-    canvas.height = canvas.clientHeight * devicePixelRatio;
-
     this.context.configure({
       device: this.device,
       format: this.format,
       alphaMode: 'premultiplied',
     });
 
-    // 4. Crear Pipeline de Renderizado (El Primer Triángulo)
-    const shaderModule = this.device.createShaderModule({
-      label: 'Basic Triangle Shader',
-      code: BasicShaderWGSL
+    // --- 1. Definir Bind Group Layouts (EXPLÍCITO para evitar errores de validación) ---
+    const cameraLayout = this.device.createBindGroupLayout({
+      label: 'Camera Layout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform' }
+      }]
+    });
+
+    const transformLayout = this.device.createBindGroupLayout({
+      label: 'Transform Layout',
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'read-only-storage' }
+      }]
+    });
+
+    // --- 2. Crear Pipeline ---
+    const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
+    const pipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [cameraLayout, transformLayout]
     });
 
     this.renderPipeline = this.device.createRenderPipeline({
-      label: 'Main Render Pipeline',
-      layout: 'auto',
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'vs_main',
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format }],
-      },
-      primitive: {
-        topology: 'triangle-list',
-      },
+      layout: pipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'vs_main' },
+      fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list' }
     });
 
-    // 5. Crear Recursos de Memoria GPU (Bridge DOD-GPU)
-    // 16 floats * 4 bytes per float
-    const bufferSize = maxEntities * 16 * 4;
+    // --- 3. Crear Buffers ---
+    this.cameraBuffer = this.device.createBuffer({
+      size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    });
+
     this.transformBuffer = this.device.createBuffer({
-      label: 'Transform Storage Buffer',
-      size: bufferSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      size: maxEntities * 16 * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     });
 
-    // BindGroup 0: Comunicación de transformaciones
-    this.bindGroup = this.device.createBindGroup({
-      label: 'Main Transform BindGroup',
-      layout: this.renderPipeline.getBindGroupLayout(0),
-      entries: [
-        {
-          binding: 0,
-          resource: { buffer: this.transformBuffer },
-        },
-      ],
+    // --- 4. Crear Bind Groups ---
+    this.cameraBindGroup = this.device.createBindGroup({
+      layout: cameraLayout,
+      entries: [{ binding: 0, resource: { buffer: this.cameraBuffer! } }]
     });
 
-    // 6. Inicializar Descriptores Reciclables (Zero GC)
+    this.transformBindGroup = this.device.createBindGroup({
+      layout: transformLayout,
+      entries: [{ binding: 0, resource: { buffer: this.transformBuffer! } }]
+    });
+
+    // --- 5. Descriptor ---
     this.renderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: null as unknown as GPUTextureView, // Se asignará en caliente
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
+      colorAttachments: [{
+        view: null as unknown as GPUTextureView,
+        clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }]
     };
-
-    // Logger.info('RHI', `Inicializado a ${canvas.width}x${canvas.height} (DPI: ${devicePixelRatio})`);
   }
 
   /**
-   * Procesa un frame de renderizado instanciado.
-   * @param transformArray Array crudo del TransformPool.
-   * @param instanceCount Cantidad de instancias activas para dibujar.
+   * Renderiza el frame actual.
    */
-  public renderFrame(transformArray: Float32Array, instanceCount: number): void {
-    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline || !this.transformBuffer || !this.bindGroup) {
-      Logger.error('RHI', "Intento de renderizado sin inicializar recursos.");
-      throw new Error("RHI no inicializado. Llama a initialize() primero.");
-    }
+  public renderFrame(transformArray: Float32Array, instanceCount: number, viewProj: Float32Array): void {
+    if (!this.device || !this.context || !this.renderPassDescriptor || !this.renderPipeline ||
+      !this.cameraBuffer || !this.transformBuffer || !this.cameraBindGroup || !this.transformBindGroup) return;
 
-    // 1. Actualizar VRAM con los datos de la CPU
+    // Actualizar VRAM
+    this.device.queue.writeBuffer(
+      this.cameraBuffer,
+      0,
+      viewProj.buffer as ArrayBuffer,
+      viewProj.byteOffset,
+      viewProj.byteLength
+    );
     this.device.queue.writeBuffer(
       this.transformBuffer,
       0,
@@ -157,42 +139,19 @@ export class SerionRHI {
       transformArray.byteLength
     );
 
-    const commandEncoder = this.device.createCommandEncoder();
-
-    // [OPTIMIZACIÓN]: Reutilización de descriptor. Prohibido usar {} o new.
+    const encoder = this.device.createCommandEncoder();
     const attachments = this.renderPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
-    const colorAttachment = attachments[0];
-    colorAttachment.view = this.context.getCurrentTexture().createView();
+    attachments[0].view = this.context.getCurrentTexture().createView();
 
-    // Fondo Unreal-Style por defecto
-    const clearValue = colorAttachment.clearValue as GPUColorDict;
-    clearValue.r = 0.1;
-    clearValue.g = 0.1;
-    clearValue.b = 0.1;
-    clearValue.a = 1.0;
+    const pass = encoder.beginRenderPass(this.renderPassDescriptor);
+    pass.setPipeline(this.renderPipeline);
+    pass.setBindGroup(0, this.cameraBindGroup);
+    pass.setBindGroup(1, this.transformBindGroup);
+    pass.draw(3, instanceCount);
+    pass.end();
 
-    const passEncoder = commandEncoder.beginRenderPass(this.renderPassDescriptor);
-
-    // --- COMANDOS DE DIBUJO ---
-    passEncoder.setPipeline(this.renderPipeline);
-    passEncoder.setBindGroup(0, this.bindGroup);
-
-    // Dibujo Instanciado: 3 vértices por cada actor activo.
-    passEncoder.draw(3, instanceCount);
-
-    passEncoder.end();
-
-    this.device.queue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([encoder.finish()]);
   }
 
-  /**
-   * Obtiene el dispositivo GPU actual.
-   */
-  public getDevice(): GPUDevice {
-    if (!this.device) {
-      Logger.error('RHI', "GET DEVICE - No inicializado");
-      throw new Error("GPUDevice no inicializado.");
-    }
-    return this.device;
-  }
+  public getDevice(): GPUDevice { return this.device!; }
 }
