@@ -31,6 +31,7 @@ export class SerionEditorShell extends HTMLElement {
     sidebarSplitter.addEventListener('pointerdown', (e) => {
       this.isResizingSidebar = true;
       sidebarSplitter.setPointerCapture(e.pointerId);
+      sidebarSplitter.classList.add('resizing');
       overlay.style.display = 'block';
       overlay.style.cursor = 'col-resize';
       e.preventDefault();
@@ -49,6 +50,7 @@ export class SerionEditorShell extends HTMLElement {
     sidebarSplitter.addEventListener('pointerup', (e) => {
       this.isResizingSidebar = false;
       sidebarSplitter.releasePointerCapture(e.pointerId);
+      sidebarSplitter.classList.remove('resizing');
       overlay.style.display = 'none';
       overlay.style.cursor = 'default';
     });
@@ -57,6 +59,7 @@ export class SerionEditorShell extends HTMLElement {
     footerSplitter.addEventListener('pointerdown', (e) => {
       this.isResizingFooter = true;
       footerSplitter.setPointerCapture(e.pointerId);
+      footerSplitter.classList.add('resizing');
       overlay.style.display = 'block';
       overlay.style.cursor = 'row-resize';
       e.preventDefault();
@@ -75,6 +78,7 @@ export class SerionEditorShell extends HTMLElement {
     footerSplitter.addEventListener('pointerup', (e) => {
       this.isResizingFooter = false;
       footerSplitter.releasePointerCapture(e.pointerId);
+      footerSplitter.classList.remove('resizing');
       overlay.style.display = 'none';
       overlay.style.cursor = 'default';
     });
@@ -125,15 +129,14 @@ export class SerionEditorShell extends HTMLElement {
 
         .splitter {
           position: absolute;
-          background: var(--serion-accent);
+          background: transparent;
           z-index: 1000;
-          transition: opacity 0.2s;
+          transition: background 0.2s;
           touch-action: none;
-          opacity: 0;
         }
 
-        .splitter:hover, .splitter:active {
-          opacity: 1;
+        .splitter:hover, .splitter:active, .splitter.resizing {
+          background: var(--serion-accent);
         }
 
         .sidebar-splitter {
