@@ -10,3 +10,4 @@ export * from './memory/TransformPool';
 export * from './core/SActor';
 export * from './core/EntityManager';
 export * from './core/SWorld';
+export * from './core/InputManager';

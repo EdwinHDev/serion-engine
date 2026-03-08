@@ -1,11 +1,15 @@
 /**
- * BasicShader.wgsl.ts - Shader WGSL fundamental para validación del RHI.
- * Soporte para Proyección 3D e Instanced Rendering vía Storage Buffers.
+ * BasicShader.wgsl.ts - Shader WGSL fundamental para Serion Engine.
+ * Soporte para Vertex Buffers, 3D Projection e Instanced Rendering.
  */
 
 export const BasicShaderWGSL = `
 @group(0) @binding(0) var<uniform> camera: mat4x4<f32>;
 @group(1) @binding(0) var<storage, read> transformData: array<f32>;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+};
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -13,31 +17,29 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) VertexIndex : u32, @builtin(instance_index) instanceIdx : u32) -> VertexOutput {
-    var pos = array<vec2<f32>, 3>(
-        vec2<f32>(0.0, 0.5),
-        vec2<f32>(-0.5, -0.5),
-        vec2<f32>(0.5, -0.5)
-    );
-
+fn vs_main(model: VertexInput, @builtin(instance_index) instanceIdx : u32) -> VertexOutput {
     // Stride de 16 floats (DOD Alignment)
     let base = instanceIdx * 16u;
     
-    // Extraer datos del pool
+    // Extraer datos de transformación del pool
     let posX = transformData[base];
     let posY = transformData[base + 1u];
     let posZ = transformData[base + 2u];
     let scaleX = transformData[base + 7u];
     let scaleY = transformData[base + 8u];
+    let scaleZ = transformData[base + 9u];
 
-    // Aplicar transformación local
-    let finalX = (pos[VertexIndex].x * scaleX) + posX;
-    let finalY = (pos[VertexIndex].y * scaleY) + posY;
+    // Aplicar transformación local (Escalado y Posicionamiento)
+    let worldPos = vec3<f32>(
+        (model.position.x * scaleX) + posX,
+        (model.position.y * scaleY) + posY,
+        (model.position.z * scaleZ) + posZ
+    );
 
     var output: VertexOutput;
-    output.position = camera * vec4<f32>(finalX, finalY, posZ, 1.0);
+    output.position = camera * vec4<f32>(worldPos, 1.0);
     
-    // Coloración dinámica basada en el ID de instancia
+    // Coloración dinámica basada en el ID de instancia para el Stress Test
     let r = f32(instanceIdx % 100u) / 100.0;
     let g = f32((instanceIdx / 100u) % 100u) / 100.0;
     let b = 1.0 - (r + g) * 0.5;

@@ -1,10 +1,9 @@
-import { SerionEngine, Logger } from '@serion/engine';
+import { SerionEngine, InputManager } from '@serion/engine';
 
 /**
  * SerionViewport Component
- * Fixed DPI scaling to ensure crisp rendering on high-res displays.
+ * Managed interface between the DOM and the Serion Engine.
  */
-
 export class SerionViewport extends HTMLElement {
   private resizeObserver: ResizeObserver;
   private canvas: HTMLCanvasElement | null = null;
@@ -21,6 +20,9 @@ export class SerionViewport extends HTMLElement {
     this.render();
     this.canvas = this.shadowRoot?.querySelector('#serion-canvas') as HTMLCanvasElement;
     this.statusText = this.shadowRoot?.querySelector('.status-text') as HTMLElement;
+
+    // Inicializar Entrada de Usuario
+    InputManager.initialize();
 
     this.resizeObserver.observe(this);
     this.handleResize();
@@ -39,7 +41,6 @@ export class SerionViewport extends HTMLElement {
 
       await this.engine.start(this.canvas);
 
-      // Successfully initialized - Ocultar overlay
       this.statusText.style.transition = "opacity 1s ease-out";
       this.statusText.style.opacity = "0";
 
@@ -60,19 +61,13 @@ export class SerionViewport extends HTMLElement {
 
   private handleResize() {
     if (!this.canvas) return;
-
     const dpr = window.devicePixelRatio || 1;
     const rect = this.getBoundingClientRect();
 
-    // Adjust internal resolution based on DPI
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
-
-    // Maintain layout size
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
-
-    // Future: Update renderer viewport/camera here
   }
 
   private render() {
@@ -110,12 +105,13 @@ export class SerionViewport extends HTMLElement {
 
         canvas {
           display: block;
+          outline: none;
         }
       </style>
       <div class="overlay">
         <div class="status-text">SERION RENDERER (WEBGPU) - READY</div>
       </div>
-      <canvas id="serion-canvas"></canvas>
+      <canvas id="serion-canvas" tabindex="0"></canvas>
     `;
   }
 }
