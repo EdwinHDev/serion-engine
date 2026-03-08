@@ -6,3 +6,4 @@
 export * from './SerionEngine';
 export * from './rhi/SerionRHI';
 export * from './utils/Logger';
+export * from './memory/TransformPool';

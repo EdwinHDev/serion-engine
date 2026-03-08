@@ -1,11 +1,13 @@
 import { SerionRHI } from './rhi/SerionRHI';
 import { Logger } from './utils/Logger';
+import { TransformPool } from './memory/TransformPool';
 
 /**
  * SerionEngine - Clase Maestra del Motor.
  * Orquestador principal encargado de la simulación y el renderizado.
  */
 export class SerionEngine {
+  public readonly transformPool: TransformPool;
   private rhi: SerionRHI;
   private isRunning: boolean = false;
   private lastTime: number = 0;
@@ -13,6 +15,13 @@ export class SerionEngine {
 
   constructor() {
     this.rhi = new SerionRHI();
+
+    // Inicializar Pool de Transformaciones (Capa 1 - DOD)
+    const maxEntities = 10000;
+    this.transformPool = new TransformPool(maxEntities);
+
+    const memoryKB = (this.transformPool.getByteSize()) / 1024;
+    Logger.info('ENGINE', `TransformPool inicializado: ${memoryKB} KB para ${maxEntities} entidades.`);
   }
 
   /**
