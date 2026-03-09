@@ -155,6 +155,10 @@ export class SWorld {
 
   public shiftOrigin(offsetX: number, offsetY: number, offsetZ: number): void {
     for (const actor of this.actors.values()) {
+      // ESTÁNDAR AAA: Los hijos NO se desplazan. Su posición es local a su padre.
+      // El padre, al ser desplazado globalmente, arrastrará a sus hijos.
+      if (actor.parentId !== null) continue;
+
       actor.setPosition(
         actor.x - offsetX,
         actor.y - offsetY,
