@@ -40,14 +40,13 @@ export class SActor {
   ) { }
 
   /**
-   * Actualiza el AABB de mundo basado en la malla actual y la matriz de modelo.
+   * Actualiza el AABB de mundo basado en un AABB local inyectado y la matriz de modelo.
+   * @param localAABB El AABB base (generalmente proveniente del GeometryRegistry).
    * @param modelMatrix Matriz de transformación 4x4.
    */
-  public updateWorldAABB(modelMatrix: Float32Array): void {
-    if (this.staticMesh && this.staticMesh.mesh) {
-      this.worldAABB.copy(this.staticMesh.mesh.localAABB);
-      this.worldAABB.transform(modelMatrix);
-    }
+  public updateWorldAABB(localAABB: AABB, modelMatrix: Float32Array): void {
+    this.worldAABB.copy(localAABB);
+    this.worldAABB.transform(modelMatrix);
   }
 
   // --- ACCESSORS DE POSICIÓN ---
