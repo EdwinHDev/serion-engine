@@ -158,13 +158,18 @@ export class SerionEngine {
     }
   };
 
+  /**
+   * Procesa todas las entidades visibles y organiza sus datos en el buffer de instancias.
+   * Optimización: Agrupa por malla para minimizar cambios de estado en la GPU.
+   */
   private renderPBRBatch(): void {
-    const rawTransforms = this.transformPool.getRawData();
     const actors = this.activeWorld.getActors();
 
+    // 1. Contar instancias por malla (Reutilizando Mapas para Zero-GC)
     for (const mesh of this.geometryRegistry.getMeshes()) {
       this.meshInstanceCounts.set(mesh.id, 0);
     }
+
     for (const actor of actors.values()) {
       if (actor.staticMesh) {
         const id = actor.staticMesh.meshId;
@@ -172,27 +177,50 @@ export class SerionEngine {
       }
     }
 
+    // 2. Definir offsets de inicio para el buffer flat
     let totalInstances = 0;
     let activeDrawCallCount = 0;
+
     for (const mesh of this.geometryRegistry.getMeshes()) {
       const count = this.meshInstanceCounts.get(mesh.id) || 0;
       if (count > 0) {
         const startOffsetFloats = totalInstances * 40;
         this.meshStartOffsets.set(mesh.id, startOffsetFloats);
+
         const drawCall = this.drawCallPool[activeDrawCallCount];
         drawCall.mesh = mesh;
         drawCall.count = count;
         drawCall.startOffsetBytes = startOffsetFloats * 4;
+
         activeDrawCallCount++;
         totalInstances += count;
       }
     }
+
+    // 3. Escribir datos de transformación y materiales (CPU -> BatchBuffer)
+    if (totalInstances > 0) {
+      this.updateInstanceBuffers();
+
+      // 4. Envío único al RHI
+      const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
+      this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment, activeView);
+    }
+  }
+
+  /**
+   * Actualiza el buffer de instancia flat con las matrices y parámetros PBR.
+   * Mantiene el estándar de 160 bytes (40 floats) por instancia.
+   */
+  private updateInstanceBuffers(): void {
+    const rawTransforms = this.transformPool.getRawData();
+    const actors = this.activeWorld.getActors();
 
     for (const actor of actors.values()) {
       if (actor.staticMesh) {
         const id = actor.staticMesh.meshId;
         const targetOffset = this.meshStartOffsets.get(id)!;
 
+        // Matrix: Model (4x4)
         SMat4.fromRotationTranslationScale(
           this.batchBuffer,
           rawTransforms.subarray(actor.id * 16 + 3, actor.id * 16 + 7),
@@ -200,21 +228,21 @@ export class SerionEngine {
           rawTransforms.subarray(actor.id * 16 + 7, actor.id * 16 + 10),
           targetOffset
         );
+
+        // Matrix: Normal (Transpose Inverse 4x4)
         SMat4.invertTranspose4x4(this.batchBuffer, this.batchBuffer, targetOffset + 16, targetOffset);
 
+        // PBR Data (BaseColor + Params)
         if (actor.material) {
           this.batchBuffer.set(actor.material.baseColor, targetOffset + 32);
           this.batchBuffer.set(actor.material.pbrParams, targetOffset + 36);
         } else {
           this.batchBuffer.set([1, 1, 1, 1, 0, 0.5, 0.5, 0], targetOffset + 32);
         }
+
+        // Incrementar offset para la siguiente instancia de esta misma malla
         this.meshStartOffsets.set(id, targetOffset + 40);
       }
-    }
-
-    if (totalInstances > 0) {
-      const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
-      this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment.buffer, activeView);
     }
   }
 

@@ -246,7 +246,32 @@ export class SerionRHI {
     };
   }
 
-  public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: Float32Array, fullInstanceData: Float32Array): void {
+  /**
+   * Ejecuta un pase de renderizado de sombras para una cascada específica.
+   * Optimización: Reutiliza la lógica de grabación de comandos para evitar redundancia.
+   */
+  private executeShadowPass(
+    encoder: GPUCommandEncoder,
+    descriptor: GPURenderPassDescriptor,
+    pipeline: GPURenderPipeline,
+    drawCalls: SDrawCall[],
+    activeCount: number
+  ): void {
+    const pass = encoder.beginRenderPass(descriptor);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, this.shadowBindGroup!);
+    this.recordDrawCalls(pass, drawCalls, activeCount);
+    pass.end();
+  }
+
+  /**
+   * Renderiza un frame completo incluyendo cascadas de sombras y pase de belleza.
+   * @param drawCalls Llamadas de dibujo acumuladas por el motor.
+   * @param activeCallCount Cantidad de mallas distintas a dibujar.
+   * @param globalEnvData Datos del buffer uniforme global (SGlobalEnvironmentData).
+   * @param fullInstanceData Datos de instancia combinados (160 bytes por instancia).
+   */
+  public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: any, fullInstanceData: Float32Array): void {
     if (!this.device || !this.context || !this.mainPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -264,28 +289,20 @@ export class SerionRHI {
       this.updatePassDescriptors();
     }
 
+    // Carga de datos a la GPU (Zero-GC)
     this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 288);
     this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
 
     const encoder = this.device.createCommandEncoder();
 
-    // PASS 0: Shadow Cascade 0
-    const pass0 = encoder.beginRenderPass(this.shadowPassDescriptor0!);
-    pass0.setPipeline(this.shadowPipeline0!);
-    pass0.setBindGroup(0, this.shadowBindGroup!);
-    this.recordDrawCalls(pass0, drawCalls, activeCallCount);
-    pass0.end();
+    // 1. PASES DE SOMBRA (CSM)
+    this.executeShadowPass(encoder, this.shadowPassDescriptor0!, this.shadowPipeline0!, drawCalls, activeCallCount);
+    this.executeShadowPass(encoder, this.shadowPassDescriptor1!, this.shadowPipeline1!, drawCalls, activeCallCount);
 
-    // PASS 1: Shadow Cascade 1
-    const pass1 = encoder.beginRenderPass(this.shadowPassDescriptor1!);
-    pass1.setPipeline(this.shadowPipeline1!);
-    pass1.setBindGroup(0, this.shadowBindGroup!);
-    this.recordDrawCalls(pass1, drawCalls, activeCallCount);
-    pass1.end();
-
-    // PASS 2: Main Beauty Pass
+    // 2. PASE DE BELLEZA (Beauty Pass)
     const attachments = this.mainPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
     attachments[0].view = this.context.getCurrentTexture().createView();
+
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
     mainPass.setPipeline(this.renderPipeline);
     mainPass.setBindGroup(0, this.cameraBindGroup!);
