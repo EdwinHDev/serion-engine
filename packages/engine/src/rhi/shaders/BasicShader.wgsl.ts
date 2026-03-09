@@ -171,14 +171,14 @@ fn shadow_vs_main_c0(input: VertexInput) -> @builtin(position) vec4<f32> {
     let normalMatrix = mat4x4<f32>(
         input.normalMatrixR0, input.normalMatrixR1, input.normalMatrixR2, input.normalMatrixR3
     );
-
-    let world_pos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
-    let world_normal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
     
-    // Normal Offset Bias: Empujar el vértice hacia afuera para evitar que la superficie se sombree a sí misma (Shadow Acne)
-    let biased_world_pos = world_pos + (world_normal * 0.15);
+    let worldPos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
+    let worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
     
-    return env.lightViewProj0 * vec4<f32>(biased_world_pos, 1.0);
+    // Dynamic Normal Offset Bias (0.15 unidades físicas)
+    let biasedWorldPos = worldPos + (worldNormal * 0.15);
+    
+    return env.lightViewProj0 * vec4<f32>(biasedWorldPos, 1.0);
 }
 
 @vertex
@@ -189,13 +189,13 @@ fn shadow_vs_main_c1(input: VertexInput) -> @builtin(position) vec4<f32> {
     let normalMatrix = mat4x4<f32>(
         input.normalMatrixR0, input.normalMatrixR1, input.normalMatrixR2, input.normalMatrixR3
     );
-
-    let world_pos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
-    let world_normal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
     
-    // Normal Offset Bias: Aplicado a la cascada lejana
-    let biased_world_pos = world_pos + (world_normal * 0.15);
+    let worldPos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
+    let worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
     
-    return env.lightViewProj1 * vec4<f32>(biased_world_pos, 1.0);
+    // Dynamic Normal Offset Bias (0.15 unidades físicas)
+    let biasedWorldPos = worldPos + (worldNormal * 0.15);
+    
+    return env.lightViewProj1 * vec4<f32>(biasedWorldPos, 1.0);
 }
 `;
