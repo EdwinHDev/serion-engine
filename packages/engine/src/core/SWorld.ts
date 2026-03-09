@@ -1,5 +1,6 @@
 import { EntityManager } from './EntityManager';
 import { SActor } from './SActor';
+import { Logger } from '../utils/Logger';
 
 /**
  * SWorld - Contenedor Lógico de la Simulación.
@@ -55,6 +56,23 @@ export class SWorld {
    */
   public getActors(): Map<number, SActor> {
     return this.actors;
+  }
+
+  /**
+   * Desplaza el origen del mundo para mantener la precisión de punto flotante (Rebase).
+   * @param offsetX Desplazamiento en X.
+   * @param offsetY Desplazamiento en Y.
+   * @param offsetZ Desplazamiento en Z.
+   */
+  public shiftOrigin(offsetX: number, offsetY: number, offsetZ: number): void {
+    for (const actor of this.actors.values()) {
+      actor.setPosition(
+        actor.x - offsetX,
+        actor.y - offsetY,
+        actor.z - offsetZ
+      );
+    }
+    Logger.info('WORLD', `Origin Shift ejecutado. Offset: [${offsetX.toFixed(2)}, ${offsetY.toFixed(2)}, ${offsetZ.toFixed(2)}]`);
   }
 
   public getEntityManager(): EntityManager {

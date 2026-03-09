@@ -30,6 +30,7 @@ export class SerionEngine {
   private animationFrameid: number = 0;
 
   private freeCameraController: FreeCameraController | null = null;
+  private readonly ORIGIN_SHIFT_THRESHOLD = 200000.0; // 2 km
 
   // Stride 40 floats (160 bytes)
   private batchBuffer = new Float32Array(10000 * 40);
@@ -101,6 +102,12 @@ export class SerionEngine {
 
       const activeCamera = this.cameraManager.getActiveCamera();
       if (activeCamera) {
+        // --- FLOATING ORIGIN SHIFT (Mundos Masivos) ---
+        const distSq = (activeCamera.actor.x * activeCamera.actor.x) + (activeCamera.actor.y * activeCamera.actor.y);
+        if (distSq > (this.ORIGIN_SHIFT_THRESHOLD * this.ORIGIN_SHIFT_THRESHOLD)) {
+          this.activeWorld.shiftOrigin(activeCamera.actor.x, activeCamera.actor.y, 0);
+        }
+
         activeCamera.aspectRatio = this.rhi.getAspectRatio();
 
         // 1. Matriz Cámara Jugador
