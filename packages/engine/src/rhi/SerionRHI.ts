@@ -1,6 +1,7 @@
 import { Logger } from '../utils/Logger';
 import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
+import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
 export interface SDrawCall {
   mesh: SStaticMesh;
@@ -245,10 +246,12 @@ export class SerionRHI {
       }
     };
   }
-
   /**
    * Ejecuta un pase de renderizado de sombras para una cascada específica.
    * Optimización: Reutiliza la lógica de grabación de comandos para evitar redundancia.
+   * 
+   * @note [Culling]: En futuras versiones (Capa de Culling), este método recibirá 
+   * una lista pre-filtrada de Draw Calls visibles para los límites de esta cascada.
    */
   private executeShadowPass(
     encoder: GPUCommandEncoder,
@@ -268,10 +271,15 @@ export class SerionRHI {
    * Renderiza un frame completo incluyendo cascadas de sombras y pase de belleza.
    * @param drawCalls Llamadas de dibujo acumuladas por el motor.
    * @param activeCallCount Cantidad de mallas distintas a dibujar.
-   * @param globalEnvData Datos del buffer uniforme global (SGlobalEnvironmentData).
+   * @param globalEnvData Datos del buffer uniforme global estructurados.
    * @param fullInstanceData Datos de instancia combinados (160 bytes por instancia).
    */
-  public renderFrame(drawCalls: SDrawCall[], activeCallCount: number, globalEnvData: any, fullInstanceData: Float32Array): void {
+  public renderFrame(
+    drawCalls: SDrawCall[],
+    activeCallCount: number,
+    globalEnvData: SGlobalEnvironmentData,
+    fullInstanceData: Float32Array
+  ): void {
     if (!this.device || !this.context || !this.mainPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -290,7 +298,7 @@ export class SerionRHI {
     }
 
     // Carga de datos a la GPU (Zero-GC)
-    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer, globalEnvData.byteOffset, 288);
+    this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer);
     this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
 
     const encoder = this.device.createCommandEncoder();

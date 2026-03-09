@@ -6,11 +6,10 @@ import { CameraManager } from './camera/CameraManager';
 import { SCamera } from './camera/SCamera';
 import { FreeCameraController } from './camera/FreeCameraController';
 import { GeometryRegistry } from './geometry/GeometryRegistry';
-import { SStaticMeshComponent } from './components/SStaticMeshComponent';
-import { SMaterialComponent } from './components/SMaterialComponent';
 import { SMat4 } from './math/SMath';
 import { SGlobalEnvironmentData } from './core/SGlobalEnvironmentData';
 import { CascadedShadowManager } from './lighting/CascadedShadowManager';
+import { SceneBuilder } from './scene/SceneBuilder';
 
 /**
  * SerionEngine - Clase Maestra.
@@ -74,21 +73,8 @@ export class SerionEngine {
       this.cameraManager.setActiveCamera(mainCamera);
       this.freeCameraController = new FreeCameraController(mainCamera);
 
-      // --- ESCENA SHOWCASE PBR ---
-      const floor = this.activeWorld.spawnActor();
-      floor.setScale(5000, 5000, 10);
-      floor.setPosition(0, 0, -5);
-      floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
-      floor.material = new SMaterialComponent();
-      floor.material.setColor(0.6, 0.6, 0.6);
-      floor.material.setPBR(0.0, 0.7);
-
-      // Figuras para proyectar sombras
-      this.spawnShowcaseActor('Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);    // Oro
-      this.spawnShowcaseActor('Primitive_Sphere', -200, 0, 150, [1.0, 0.1, 0.1], 0.0, 0.2); // Plástico
-      this.spawnShowcaseActor('Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4); // Aluminio
-      this.spawnShowcaseActor('Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9);   // Goma
-      this.spawnShowcaseActor('Primitive_Capsule', 400, 0, 150, [1.0, 0.4, 0.2], 1.0, 0.15); // Cobre
+      // --- ESCENA SHOWCASE PBR (Centralizada en SceneBuilder) ---
+      SceneBuilder.buildShowcase(this.activeWorld);
 
       this.isRunning = true;
       this.lastTime = performance.now();
@@ -101,15 +87,6 @@ export class SerionEngine {
     }
   }
 
-  private spawnShowcaseActor(mesh: string, x: number, y: number, z: number, color: number[], met: number, rough: number) {
-    const actor = this.activeWorld.spawnActor();
-    actor.setPosition(x, y, z);
-    actor.setScale(100, 100, 100);
-    actor.staticMesh = new SStaticMeshComponent(mesh);
-    actor.material = new SMaterialComponent();
-    actor.material.setColor(color[0], color[1], color[2]);
-    actor.material.setPBR(met, rough);
-  }
 
   private loop = (currentTime: number): void => {
     if (!this.isRunning) return;
