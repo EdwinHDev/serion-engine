@@ -1,5 +1,6 @@
 import { Logger } from '../utils/Logger';
 import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
+import { GridShaderWGSL } from './shaders/GridShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -23,6 +24,7 @@ export class SerionRHI {
   private renderPipeline: GPURenderPipeline | null = null;
   private shadowPipeline0: GPURenderPipeline | null = null;
   private shadowPipeline1: GPURenderPipeline | null = null;
+  private gridPipeline: GPURenderPipeline | null = null;
 
   private cameraBuffer: GPUBuffer | null = null;
   private instanceBuffer: GPUBuffer | null = null;
@@ -159,6 +161,25 @@ export class SerionRHI {
         depthBiasSlopeScale: 2.0,
         depthBiasClamp: 0.0
       }
+    });
+
+    // Grid Pipeline (Capa 13.4)
+    this.gridPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: this.device.createShaderModule({ code: GridShaderWGSL }), entryPoint: 'vs_main' },
+      fragment: {
+        module: this.device.createShaderModule({ code: GridShaderWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+          }
+        }]
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' }
     });
 
     // Buffers a 288 Bytes
@@ -315,6 +336,13 @@ export class SerionRHI {
     mainPass.setPipeline(this.renderPipeline);
     mainPass.setBindGroup(0, this.cameraBindGroup!);
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
+
+    // 3. PASE DE REJILLA (Grid Overlay)
+    if (this.gridPipeline) {
+      mainPass.setPipeline(this.gridPipeline);
+      mainPass.draw(6, 1, 0, 0);
+    }
+
     mainPass.end();
 
     this.device.queue.submit([encoder.finish()]);

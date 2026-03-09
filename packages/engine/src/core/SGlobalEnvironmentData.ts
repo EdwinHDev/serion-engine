@@ -69,7 +69,7 @@ export class SGlobalEnvironmentData {
    * Offset 64: Color cielo (RGB) + Alpha (W).
    * Offset 68: Color suelo (RGB) + Alpha (W).
    */
-  public setAtmosphere(sunColor: number[] | Float32Array, ambientInt: number, skyColor: number[] | Float32Array, groundColor: number[] | Float32Array): void {
+  public setAtmosphere(sunColor: Float32Array, ambientInt: number, skyColor: Float32Array, groundColor: Float32Array): void {
     // Sun Color & Ambient
     this.buffer[60] = sunColor[0];
     this.buffer[61] = sunColor[1];

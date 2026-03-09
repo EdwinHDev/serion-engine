@@ -18,7 +18,7 @@ export class SceneBuilder {
     // 1. Suelo de concreto (Pase de sombras receptor)
     const floor = world.spawnActor();
     floor.setScale(5000, 5000, 10);
-    floor.setPosition(0, 0, -5);
+    floor.setPosition(0, 0, 1);
     floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
     floor.material = new SMaterialComponent();
     floor.material.setColor(0.6, 0.6, 0.6);

@@ -45,6 +45,7 @@ export class SerionEngine {
 
   // Fallback defaults (evitan basura en el loop)
   private defaultSunDirection = new Float32Array([0.5, 0.5, -1.0]);
+  private defaultZeroColor = new Float32Array([0, 0, 0]);
 
   private meshInstanceCounts = new Map<string, number>();
   private meshStartOffsets = new Map<string, number>();
@@ -163,9 +164,9 @@ export class SerionEngine {
       if (!atmosphereFound && actor.atmosphere) {
         const atmo = actor.atmosphere;
         this.globalEnvironment.setAtmosphere(
-          atmo.skyColor as any, atmo.ambientIntensity,
-          atmo.skyColor as any, // Por ahora el Zenith usa el SkyColor
-          atmo.groundColor as any
+          atmo.skyColor, atmo.ambientIntensity,
+          atmo.skyColor, // Por ahora el Zenith usa el SkyColor
+          atmo.groundColor
         );
         atmosphereFound = true;
       }
@@ -179,7 +180,7 @@ export class SerionEngine {
       this.csmManager.update(camera, this.defaultSunDirection, this.globalEnvironment);
     }
     if (!atmosphereFound) {
-      this.globalEnvironment.setAtmosphere([0, 0, 0], 0, [0, 0, 0], [0, 0, 0]);
+      this.globalEnvironment.setAtmosphere(this.defaultZeroColor, 0, this.defaultZeroColor, this.defaultZeroColor);
     }
 
     // Posición física (independiente de componentes)
