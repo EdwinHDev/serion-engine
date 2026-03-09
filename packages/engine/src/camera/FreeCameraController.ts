@@ -82,7 +82,11 @@ export class FreeCameraController {
   }
 
   private applyInertia(deltaTime: number): void {
-    const t = this.lerpFactor * deltaTime;
+    // ESTÁNDAR AAA: Frame-Independent Exponential Decay.
+    // Esto garantiza que "t" nunca exceda 1.0, sin importar lo grande que sea el deltaTime,
+    // eliminando las vibraciones o "congelamientos" violentos de velocidad.
+    const t = 1.0 - Math.exp(-this.lerpFactor * deltaTime);
+
     this.currentVelocity[0] += (this.targetVelocity[0] - this.currentVelocity[0]) * t;
     this.currentVelocity[1] += (this.targetVelocity[1] - this.currentVelocity[1]) * t;
     this.currentVelocity[2] += (this.targetVelocity[2] - this.currentVelocity[2]) * t;

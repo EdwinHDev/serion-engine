@@ -37,7 +37,9 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let coord = input.worldPos.xy;
-    let derivative = fwidth(coord);
+    
+    // BLINDAJE AAA: Evitar división por cero o NaN.
+    let derivative = max(fwidth(coord), vec2<f32>(0.00001));
     
     let grid100 = abs(fract(coord / 100.0 - 0.5) - 0.5) / (derivative / 100.0);
     let grid1000 = abs(fract(coord / 1000.0 - 0.5) - 0.5) / (derivative / 1000.0);
