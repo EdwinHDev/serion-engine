@@ -72,17 +72,30 @@ export class SerionSidebar extends HTMLElement {
 
   private updateFlattenedList() {
     const list: typeof this.flattenedList = [];
-    const roots = Array.from(this.rawData.values()).filter(a => a.parentId === null);
 
-    const hasChildren = (id: number) => {
-      for (const a of this.rawData.values()) if (a.parentId === id) return true;
-      return false;
-    };
+    // 1. OPTIMIZACIÓN O(N): Agrupar todos los hijos por su parentId en una sola pasada.
+    // Esto evita recorrer el rawData (100,000 items) múltiples veces.
+    const childrenMap = new Map<number | null, any[]>();
 
+    for (const actor of this.rawData.values()) {
+      let siblings = childrenMap.get(actor.parentId);
+      if (!siblings) {
+        siblings = [];
+        childrenMap.set(actor.parentId, siblings);
+      }
+      siblings.push(actor);
+    }
+
+    // 2. Recorrido recursivo ultra-rápido usando el mapa pre-calculado
     const traverse = (parentId: number | null, depth: number) => {
-      const children = Array.from(this.rawData.values()).filter(a => a.parentId === parentId);
+      const children = childrenMap.get(parentId);
+      if (!children) return;
+
       for (const child of children) {
-        const canExpand = hasChildren(child.id);
+        // Un actor tiene hijos si existe como "padre" en nuestro mapa
+        const nodeChildren = childrenMap.get(child.id);
+        const canExpand = nodeChildren ? nodeChildren.length > 0 : false;
+
         list.push({
           id: child.id,
           name: child.name,
@@ -91,15 +104,18 @@ export class SerionSidebar extends HTMLElement {
           isExpanded: child.isExpanded
         });
 
+        // Si está expandido y tiene hijos, continuamos la recursividad
         if (child.isExpanded && canExpand) {
           traverse(child.id, depth + 1);
         }
       }
     };
 
+    // Iniciar desde la raíz (los que no tienen padre)
     traverse(null, 0);
     this.flattenedList = list;
 
+    // Actualizar la altura del contenedor fantasma para la barra de scroll
     if (this.ghost) {
       this.ghost.style.height = `${this.flattenedList.length * this.ROW_HEIGHT}px`;
     }
