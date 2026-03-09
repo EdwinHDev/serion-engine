@@ -14,6 +14,7 @@ import { SceneBuilder } from './scene/SceneBuilder';
 import { Frustum } from './math/Frustum';
 import { SActor } from './core/SActor';
 
+
 /**
  * SerionEngine - Clase Maestra.
  * Capa 12.6: Gestor CSM Dinámico.
@@ -169,66 +170,57 @@ export class SerionEngine {
    */
   private updateGlobalEnvironment(camera: SCamera): void {
     const actors = this.activeWorld.getActors();
-    let sunFound = false;
-    let atmosphereFound = false;
+    let sunComp: import('./components/SDirectionalLightComponent').SDirectionalLightComponent | null = null;
+    let atmoComp: import('./components/SAtmosphereComponent').SAtmosphereComponent | null = null;
 
-    // Iteración rápida Zero-GC
+    // 1. Extraer los componentes clave (Zero-GC)
     for (const actor of actors.values()) {
-      // Direccional (Sol)
-      if (!sunFound && actor.directionalLight) {
-        const sun = actor.directionalLight;
-        this.globalEnvironment.setSun(sun.direction[0], sun.direction[1], sun.direction[2], sun.intensity);
-
-        // Sincronizar CSM con la dirección del sol encontrado
-        this.csmManager.update(camera, sun.direction, this.globalEnvironment);
-        sunFound = true;
-      }
-
-      // Atmósfera
-      if (!atmosphereFound && actor.atmosphere) {
-        const atmo = actor.atmosphere;
-
-        // --- SIMULACIÓN FÍSICA (Si hay un sol previo) ---
-        if (sunFound) {
-          AtmosphereSystem.updateTransmittance(actor.directionalLight || Array.from(actors.values()).find(a => a.directionalLight)?.directionalLight!, atmo);
-        } else {
-          // Si el sol aún no se ha encontrado en la iteración, buscamos proactivamente lo que necesitamos
-          for (const a of actors.values()) {
-            if (a.directionalLight) {
-              AtmosphereSystem.updateTransmittance(a.directionalLight, atmo);
-              break;
-            }
-          }
-        }
-
-        this.globalEnvironment.setAtmosphere(
-          atmo._calculatedSkyColor, atmo.ambientIntensity,
-          atmo._calculatedSkyColor,
-          atmo._calculatedGroundColor
-        );
-
-        this.globalEnvironment.setAtmospherePhysics(
-          atmo.rayleighScattering,
-          atmo.mieScattering,
-          atmo.planetRadius,
-          atmo.atmosphereRadius
-        );
-        atmosphereFound = true;
-      }
-
-      if (sunFound && atmosphereFound) break;
+      if (!sunComp && actor.directionalLight) sunComp = actor.directionalLight;
+      if (!atmoComp && actor.atmosphere) atmoComp = actor.atmosphere;
+      if (sunComp && atmoComp) break;
     }
 
-    // Fallbacks si no hay componentes en la escena
-    if (!sunFound) {
+    if (sunComp && atmoComp) {
+      // 2. EL CEREBRO FÍSICO: Calcular Transmitancia en CPU
+      AtmosphereSystem.updateTransmittance(sunComp, atmoComp);
+
+      // 3. Enviar datos físicos del Sol al GPU
+      this.globalEnvironment.setSun(
+        sunComp.direction[0], sunComp.direction[1], sunComp.direction[2],
+        sunComp.intensity
+      );
+      // Aseguramos que el color tintado del sol llega al buffer (Float offsets 60, 61, 62)
+      this.globalEnvironment.buffer[60] = sunComp.color[0];
+      this.globalEnvironment.buffer[61] = sunComp.color[1];
+      this.globalEnvironment.buffer[62] = sunComp.color[2];
+
+      // 4. Enviar los colores hemisféricos generados para iluminar los modelos PBR
+      this.globalEnvironment.setAtmosphere(
+        atmoComp._calculatedSkyColor,
+        atmoComp.ambientIntensity,
+        atmoComp._calculatedSkyColor,
+        atmoComp._calculatedGroundColor
+      );
+
+      // 5. Inyectar coeficientes de Rayleigh y Mie para el SkyShader Procedural
+      if (typeof this.globalEnvironment.setAtmospherePhysics === 'function') {
+        this.globalEnvironment.setAtmospherePhysics(
+          atmoComp.rayleighScattering,
+          atmoComp.mieScattering,
+          atmoComp.planetRadius,
+          atmoComp.atmosphereRadius
+        );
+      }
+
+      this.csmManager.update(camera, sunComp.direction, this.globalEnvironment);
+    } else {
+      // Fallbacks si la escena está vacía
       this.globalEnvironment.setSun(this.defaultSunDirection[0], this.defaultSunDirection[1], this.defaultSunDirection[2], 0.0);
+      this.globalEnvironment.setAtmosphere(this.defaultZeroColor, 0, this.defaultZeroColor, this.defaultZeroColor);
       this.csmManager.update(camera, this.defaultSunDirection, this.globalEnvironment);
     }
-    if (!atmosphereFound) {
-      this.globalEnvironment.setAtmosphere(this.defaultZeroColor, 0, this.defaultZeroColor, this.defaultZeroColor);
-    }
 
-    // Posición física (independiente de componentes)
+    // Posición de cámara independiente
     this.globalEnvironment.setCameraPosition(camera.actor.x, camera.actor.y, camera.actor.z);
   }
 

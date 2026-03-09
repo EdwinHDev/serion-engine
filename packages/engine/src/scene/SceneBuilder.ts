@@ -15,7 +15,7 @@ export class SceneBuilder {
    * @param world El mundo donde se instanciarán los actores.
    */
   public static buildShowcase(world: SWorld): void {
-    // 1. Suelo de concreto (Pase de sombras receptor)
+    // 1. Suelo de concreto (Pase de sombras receptor temporal)
     const floor = world.spawnActor();
     floor.setScale(5000, 5000, 10);
     floor.setPosition(0, 0, 1);
@@ -25,24 +25,23 @@ export class SceneBuilder {
     floor.material.setPBR(0.0, 0.7);
 
     // 2. Galería de Primitivas PBR para validación de sombras y materiales
-    this.spawnShowcaseActor(world, 'Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);    // Oro
+    this.spawnShowcaseActor(world, 'Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);      // Oro
     this.spawnShowcaseActor(world, 'Primitive_Sphere', -200, 0, 150, [1.0, 0.1, 0.1], 0.0, 0.2);    // Plástico
-    this.spawnShowcaseActor(world, 'Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4);      // Aluminio
-    this.spawnShowcaseActor(world, 'Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9);    // Goma
+    this.spawnShowcaseActor(world, 'Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4);     // Aluminio
+    this.spawnShowcaseActor(world, 'Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9);       // Goma
     this.spawnShowcaseActor(world, 'Primitive_Capsule', 400, 0, 150, [1.0, 0.4, 0.2], 1.0, 0.15);   // Cobre
 
-    // 3. Actores de Entorno (Sin Geometría)
+    // 3. Entorno Físico (Sol y Atmósfera Reactiva)
     const sunActor = world.spawnActor();
     sunActor.directionalLight = new SDirectionalLightComponent();
-    sunActor.directionalLight.setColor(1.0, 0.98, 0.95);
-    sunActor.directionalLight.setIntensity(120000.0);
-    sunActor.directionalLight.setDirection(0.5, 0.5, -1.0);
+    // Inclinamos el Sol cerca del horizonte (Z = -0.15) para forzar la dispersión de Rayleigh
+    // El color y la intensidad base ahora son orquestados por AtmosphereSystem en la CPU.
+    sunActor.directionalLight.setDirection(0.8, 0.2, -0.15);
 
     const atmosphereActor = world.spawnActor();
     atmosphereActor.atmosphere = new SAtmosphereComponent();
-    atmosphereActor.atmosphere.setSkyColor(0.15, 0.35, 0.75);
-    atmosphereActor.atmosphere.setGroundColor(0.05, 0.05, 0.05);
-    atmosphereActor.atmosphere.setAmbientIntensity(1.0);
+    atmosphereActor.atmosphere.ambientIntensity = 1.0;
+    // Eliminados los colores hardcodeados. El RHI ahora dibuja el SkyShader proceduralmente.
   }
 
   /**
