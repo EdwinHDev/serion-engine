@@ -1,25 +1,22 @@
 /**
- * SAtmosphereComponent.ts - Componente para configuración de atmósfera y ambiente.
- * Capa 13.3: Desacoplamiento de Iluminación.
+ * SAtmosphereComponent.ts - Configuración de Atmósfera Física (Nishita).
+ * Capa 13.9: Modelo de dispersión de Rayleigh y Mie.
  */
 export class SAtmosphereComponent {
-  public skyColor = new Float32Array([0.5, 0.7, 1.0]);
-  public groundColor = new Float32Array([0.2, 0.2, 0.2]);
+  // Coeficientes de dispersión (Representan el color y densidad de la atmósfera)
+  public rayleighScattering = new Float32Array([0.0025, 0.0060, 0.0140]);
+  public mieScattering = 0.0010;
+
+  // Escala Planetaria (metros)
+  public planetRadius = 6360000.0;
+  public atmosphereRadius = 6420000.0;
+
   public ambientIntensity = 1.0;
 
-  public setSkyColor(r: number, g: number, b: number): void {
-    this.skyColor[0] = r;
-    this.skyColor[1] = g;
-    this.skyColor[2] = b;
-  }
-
-  public setGroundColor(r: number, g: number, b: number): void {
-    this.groundColor[0] = r;
-    this.groundColor[1] = g;
-    this.groundColor[2] = b;
-  }
-
-  public setAmbientIntensity(intensity: number): void {
-    this.ambientIntensity = intensity;
-  }
+  /**
+   * Buffers internos calculados por el AtmosphereSystem (Zero-GC).
+   * Estos colores se inyectan en el sombreador PBR para el AO hemisférico.
+   */
+  public readonly _calculatedSkyColor = new Float32Array([0.05, 0.1, 0.3]);
+  public readonly _calculatedGroundColor = new Float32Array([0.02, 0.02, 0.02]);
 }

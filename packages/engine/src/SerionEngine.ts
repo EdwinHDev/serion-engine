@@ -9,6 +9,7 @@ import { GeometryRegistry } from './geometry/GeometryRegistry';
 import { SMat4 } from './math/SMath';
 import { SGlobalEnvironmentData } from './core/SGlobalEnvironmentData';
 import { CascadedShadowManager } from './lighting/CascadedShadowManager';
+import { AtmosphereSystem } from './lighting/AtmosphereSystem';
 import { SceneBuilder } from './scene/SceneBuilder';
 import { Frustum } from './math/Frustum';
 import { SActor } from './core/SActor';
@@ -186,10 +187,31 @@ export class SerionEngine {
       // Atmósfera
       if (!atmosphereFound && actor.atmosphere) {
         const atmo = actor.atmosphere;
+
+        // --- SIMULACIÓN FÍSICA (Si hay un sol previo) ---
+        if (sunFound) {
+          AtmosphereSystem.updateTransmittance(actor.directionalLight || Array.from(actors.values()).find(a => a.directionalLight)?.directionalLight!, atmo);
+        } else {
+          // Si el sol aún no se ha encontrado en la iteración, buscamos proactivamente lo que necesitamos
+          for (const a of actors.values()) {
+            if (a.directionalLight) {
+              AtmosphereSystem.updateTransmittance(a.directionalLight, atmo);
+              break;
+            }
+          }
+        }
+
         this.globalEnvironment.setAtmosphere(
-          atmo.skyColor, atmo.ambientIntensity,
-          atmo.skyColor, // Por ahora el Zenith usa el SkyColor
-          atmo.groundColor
+          atmo._calculatedSkyColor, atmo.ambientIntensity,
+          atmo._calculatedSkyColor,
+          atmo._calculatedGroundColor
+        );
+
+        this.globalEnvironment.setAtmospherePhysics(
+          atmo.rayleighScattering,
+          atmo.mieScattering,
+          atmo.planetRadius,
+          atmo.atmosphereRadius
         );
         atmosphereFound = true;
       }

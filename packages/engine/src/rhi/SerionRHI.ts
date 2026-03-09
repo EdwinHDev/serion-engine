@@ -1,6 +1,7 @@
 import { Logger } from '../utils/Logger';
 import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 import { GridShaderWGSL } from './shaders/GridShader.wgsl';
+import { SkyShaderWGSL } from './shaders/SkyShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -12,7 +13,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 12.5: Hardware Depth Bias & Clean Code.
+ * Capa 13.10: GPU Sky Pass con Early-Z.
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -25,6 +26,7 @@ export class SerionRHI {
   private shadowPipeline0: GPURenderPipeline | null = null;
   private shadowPipeline1: GPURenderPipeline | null = null;
   private gridPipeline: GPURenderPipeline | null = null;
+  private skyPipeline: GPURenderPipeline | null = null;
 
   private cameraBuffer: GPUBuffer | null = null;
   private instanceBuffer: GPUBuffer | null = null;
@@ -182,8 +184,17 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Buffers a 288 Bytes
-    this.cameraBuffer = this.device.createBuffer({ size: 288, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // Sky Pipeline (Capa 13.10)
+    this.skyPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'vs_main' },
+      fragment: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-strip' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less-equal', format: 'depth24plus' }
+    });
+
+    // Buffer Global de Entorno (320 Bytes / 80 floats)
+    this.cameraBuffer = this.device.createBuffer({ size: 320, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 
     this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
@@ -255,7 +266,7 @@ export class SerionRHI {
     this.mainPassDescriptor = {
       colorAttachments: [{
         view: null as unknown as GPUTextureView,
-        clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, // Negro absoluto (Cielo procedural llenará el fondo)
         loadOp: 'clear',
         storeOp: 'store',
       }],
@@ -269,10 +280,6 @@ export class SerionRHI {
   }
   /**
    * Ejecuta un pase de renderizado de sombras para una cascada específica.
-   * Optimización: Reutiliza la lógica de grabación de comandos para evitar redundancia.
-   * 
-   * @note [Culling]: En futuras versiones (Capa de Culling), este método recibirá 
-   * una lista pre-filtrada de Draw Calls visibles para los límites de esta cascada.
    */
   private executeShadowPass(
     encoder: GPUCommandEncoder,
@@ -289,11 +296,7 @@ export class SerionRHI {
   }
 
   /**
-   * Renderiza un frame completo incluyendo cascadas de sombras y pase de belleza.
-   * @param drawCalls Llamadas de dibujo acumuladas por el motor.
-   * @param activeCallCount Cantidad de mallas distintas a dibujar.
-   * @param globalEnvData Datos del buffer uniforme global estructurados.
-   * @param fullInstanceData Datos de instancia combinados (160 bytes por instancia).
+   * Renderiza un frame completo incluyendo cascadas de sombras, pase de belleza y cielo procedural.
    */
   public renderFrame(
     drawCalls: SDrawCall[],
@@ -331,19 +334,21 @@ export class SerionRHI {
     // 2. PASE DE BELLEZA (Beauty Pass)
     const attachments = this.mainPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
     attachments[0].view = this.context.getCurrentTexture().createView();
-    attachments[0].clearValue = {
-      r: globalEnvData.getSkyColorR(),
-      g: globalEnvData.getSkyColorG(),
-      b: globalEnvData.getSkyColorB(),
-      a: 1.0
-    };
 
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
+
+    // Objetos Opacos
     mainPass.setPipeline(this.renderPipeline);
     mainPass.setBindGroup(0, this.cameraBindGroup!);
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
 
-    // 3. PASE DE REJILLA (Grid Overlay)
+    // 3. PASE DE CIELO PROCEDURAL (Early-Z Rejection)
+    if (this.skyPipeline) {
+      mainPass.setPipeline(this.skyPipeline);
+      mainPass.draw(4, 1, 0, 0);
+    }
+
+    // 4. PASE DE REJILLA (Grid Overlay)
     if (this.gridPipeline) {
       mainPass.setPipeline(this.gridPipeline);
       mainPass.draw(6, 1, 0, 0);
