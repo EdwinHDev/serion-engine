@@ -38,7 +38,7 @@ export class SWorld {
     // Emitir evento granular para la UI (Desacoplamiento)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('serion:actor-spawned', {
-        detail: { id: actor.id, name: `Actor_${actor.id}` }
+        detail: { id: actor.id, name: `Actor_${actor.id}`, parentId: actor.parentId }
       }));
     }
 
