@@ -29,6 +29,14 @@ export class SWorld {
     const actor = new SActor(id, this.engine);
     // this.actors.set(id, actor);
     this.actors.set(actor.id, actor);
+
+    // Emitir evento granular para la UI (Desacoplamiento)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('serion:actor-spawned', {
+        detail: { id: actor.id, name: `Actor_${actor.id}` }
+      }));
+    }
+
     return actor;
   }
 
@@ -36,8 +44,16 @@ export class SWorld {
    * Elimina un actor del mundo y recicla su ID.
    */
   public destroyActor(actor: SActor): void {
-    this.entityManager.destroyEntity(actor.id);
-    this.actors.delete(actor.id);
+    const id = actor.id;
+    this.entityManager.destroyEntity(id);
+    this.actors.delete(id);
+
+    // Emitir evento granular para la UI
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('serion:actor-destroyed', {
+        detail: { id: id }
+      }));
+    }
   }
 
   /**
