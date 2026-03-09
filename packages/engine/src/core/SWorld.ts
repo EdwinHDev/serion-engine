@@ -15,7 +15,7 @@ export class SWorld {
    * @param maxEntities Límite de actores para este mundo.
    */
   constructor(
-    private readonly engine: any,
+    public readonly engine: any,
     maxEntities: number
   ) {
     this.entityManager = new EntityManager(maxEntities);

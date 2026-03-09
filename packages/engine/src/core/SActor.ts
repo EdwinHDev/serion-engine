@@ -24,6 +24,7 @@ interface IEngineProxy {
     getScaleZ(id: number): number;
     setScale(id: number, x: number, y: number, z: number): void;
   };
+  markSceneGraphDirty(): void;
 }
 
 /**
@@ -37,6 +38,7 @@ export class SActor {
   public directionalLight: SDirectionalLightComponent | null = null;
   public atmosphere: SAtmosphereComponent | null = null;
   public readonly worldAABB = new AABB();
+  public parentId: number | null = null;
 
   constructor(
     public readonly id: number,
@@ -99,5 +101,22 @@ export class SActor {
 
   public setScale(x: number, y: number, z: number): void {
     this.engine.transformPool.setScale(this.id, x, y, z);
+  }
+
+  /**
+   * Vincula este actor a un padre.
+   */
+  public attachTo(parent: SActor): void {
+    if (parent.id === this.id) return;
+    this.parentId = parent.id;
+    this.engine.markSceneGraphDirty();
+  }
+
+  /**
+   * Desvincula este actor de su padre actual.
+   */
+  public detach(): void {
+    this.parentId = null;
+    this.engine.markSceneGraphDirty();
   }
 }

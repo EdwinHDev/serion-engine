@@ -6,7 +6,6 @@ import { CameraManager } from './camera/CameraManager';
 import { SCamera } from './camera/SCamera';
 import { FreeCameraController } from './camera/FreeCameraController';
 import { GeometryRegistry } from './geometry/GeometryRegistry';
-import { SMat4 } from './math/SMath';
 import { SGlobalEnvironmentData } from './core/SGlobalEnvironmentData';
 import { CascadedShadowManager } from './lighting/CascadedShadowManager';
 import { AtmosphereSystem } from './lighting/AtmosphereSystem';
@@ -44,7 +43,6 @@ export class SerionEngine {
   private mainCameraFrustum = new Frustum();
   private visibleActors: SActor[] = new Array(10000);
   private visibleActorCount = 0;
-  private tempModelMatrix = new Float32Array(16);
 
   // Stride 40 floats (160 bytes)
   private batchBuffer = new Float32Array(10000 * 40);
@@ -235,7 +233,6 @@ export class SerionEngine {
     const vpMatrix = this.globalEnvironment.buffer.subarray(0, 16);
     this.mainCameraFrustum.setFromProjectionMatrix(vpMatrix);
 
-    const rawTransforms = this.transformPool.getRawData();
     const actors = this.activeWorld.getActors();
 
     // 2. Evaluar visibilidad (AABB interseca Frustum)
@@ -245,17 +242,11 @@ export class SerionEngine {
       const mesh = this.geometryRegistry.getMesh(actor.staticMesh.meshId);
       if (!mesh) continue;
 
-      // Calcular matriz de modelo JIT para el AABB
-      SMat4.fromRotationTranslationScale(
-        this.tempModelMatrix,
-        rawTransforms.subarray(actor.id * 16 + 3, actor.id * 16 + 7),
-        rawTransforms.subarray(actor.id * 16, actor.id * 16 + 3),
-        rawTransforms.subarray(actor.id * 16 + 7, actor.id * 16 + 10),
-        0
-      );
+      // Obtener matriz de modelo pre-calculada desde el pool
+      const modelMatrix = this.activeWorld.engine.transformPool.getModelMatrix(actor.id);
 
       // Actualizar World AABB
-      actor.updateWorldAABB(mesh.localAABB, this.tempModelMatrix);
+      actor.updateWorldAABB(mesh.localAABB, modelMatrix);
 
       // Prueba de intersección
       if (this.mainCameraFrustum.intersectsAABB(actor.worldAABB)) {
@@ -319,8 +310,6 @@ export class SerionEngine {
    * Mantiene el estándar de 160 bytes (40 floats) por instancia.
    */
   private updateInstanceBuffers(): void {
-    const rawTransforms = this.transformPool.getRawData();
-
     for (let i = 0; i < this.visibleActorCount; i++) {
       const actor = this.visibleActors[i];
       if (actor.staticMesh) {
@@ -328,16 +317,10 @@ export class SerionEngine {
         const targetOffset = this.meshStartOffsets.get(id)!;
 
         // Matrix: Model (4x4)
-        SMat4.fromRotationTranslationScale(
-          this.batchBuffer,
-          rawTransforms.subarray(actor.id * 16 + 3, actor.id * 16 + 7),
-          rawTransforms.subarray(actor.id * 16, actor.id * 16 + 3),
-          rawTransforms.subarray(actor.id * 16 + 7, actor.id * 16 + 10),
-          targetOffset
-        );
+        this.batchBuffer.set(this.transformPool.getModelMatrix(actor.id), targetOffset);
 
         // Matrix: Normal (Transpose Inverse 4x4)
-        SMat4.invertTranspose4x4(this.batchBuffer, this.batchBuffer, targetOffset + 16, targetOffset);
+        this.batchBuffer.set(this.transformPool.getNormalMatrix(actor.id), targetOffset + 16);
 
         // PBR Data (BaseColor + Params)
         if (actor.material) {
