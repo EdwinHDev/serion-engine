@@ -5,10 +5,14 @@ import { Logger } from '../utils/Logger';
 /**
  * SWorld - Contenedor Lógico de la Simulación.
  * Centraliza la gestión de actores y la ejecución de sistemas.
+ * Corregido: Implementación real de Grafo de Escena Topológico y Bucle Lineal.
  */
 export class SWorld {
   private entityManager: EntityManager;
   private actors: Map<number, SActor> = new Map();
+
+  private sceneGraphDirty = false;
+  private renderSequence: SActor[] = [];
 
   /**
    * @param engine Referencia al motor (Capa 0/1) para el TransformPool.
@@ -26,9 +30,10 @@ export class SWorld {
    */
   public spawnActor(): SActor {
     const id = this.entityManager.createEntity();
-    const actor = new SActor(id, this.engine);
-    // this.actors.set(id, actor);
+    const actor = new SActor(id, this);
     this.actors.set(actor.id, actor);
+    this.renderSequence.push(actor);
+    this.markSceneGraphDirty();
 
     // Emitir evento granular para la UI (Desacoplamiento)
     if (typeof window !== 'undefined') {
@@ -42,44 +47,112 @@ export class SWorld {
 
   /**
    * Elimina un actor del mundo y recicla su ID.
+   * Implementa destrucción en cascada real.
    */
   public destroyActor(actor: SActor): void {
-    const id = actor.id;
-    this.entityManager.destroyEntity(id);
-    this.actors.delete(id);
+    const idList: number[] = [actor.id];
+
+    // Buscar hijos recursivamente para destrucción en cascada
+    const findChildren = (parentId: number) => {
+      for (const other of this.actors.values()) {
+        if (other.parentId === parentId) {
+          idList.push(other.id);
+          findChildren(other.id);
+        }
+      }
+    };
+    findChildren(actor.id);
+
+    // Destruir todos los actores identificados (de mayor a menor ID para evitar problemas de referencia si fuera necesario)
+    for (const id of idList) {
+      const a = this.actors.get(id);
+      if (!a) continue;
+
+      this.entityManager.destroyEntity(id);
+      this.actors.delete(id);
+
+      const idx = this.renderSequence.findIndex(x => x.id === id);
+      if (idx !== -1) this.renderSequence.splice(idx, 1);
+    }
+
+    this.markSceneGraphDirty();
 
     // Emitir evento granular para la UI
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('serion:actor-destroyed', {
-        detail: { id: id }
+        detail: { id: actor.id }
       }));
     }
   }
 
-  /**
-   * Bucle lógico del mundo.
-   * Orquestador de todos los sistemas de simulación.
-   */
-  public tick(_deltaTime: number): void {
-    // --- LÓGICA DE SIMULACIÓN ---
-    // TODO: Iterar sobre sistemas ECS, físicas y grafos de comportamiento.
-    // [RENDIMIENTO]: No iteramos sobre this.actors directamente por razones de caché CPU.
-    // Los sistemas deben iterar sobre los TypedArrays del engine.transformPool.
+  public markSceneGraphDirty(): void {
+    this.sceneGraphDirty = true;
   }
 
   /**
-   * Obtiene el EntityManager del mundo.
+   * Reordena renderSequence mediante Ordenamiento Topológico (DFS).
+   * Garantiza que los padres siempre estén antes que los hijos para la iteración lineal.
    */
+  private sortSceneGraph(): void {
+    const visited = new Set<number>();
+    const sorted: SActor[] = [];
+
+    const visit = (actor: SActor) => {
+      if (visited.has(actor.id)) return;
+
+      // Si tiene padre, visitar al padre primero (si existe en el mundo)
+      if (actor.parentId !== null) {
+        const parent = this.actors.get(actor.parentId);
+        if (parent) visit(parent);
+      }
+
+      visited.add(actor.id);
+      sorted.push(actor);
+    };
+
+    // Comenzar el recorrido para todos los actores actuales
+    for (const actor of this.actors.values()) {
+      visit(actor);
+    }
+
+    this.renderSequence = sorted;
+    Logger.info('WORLD', `Grafo de Escena ordenado topológicamente (${this.renderSequence.length} actores).`);
+  }
+
+  /**
+   * Bucle lógico del mundo.
+   * Procesa transformaciones jerárquicas de forma lineal y eficiente.
+   */
+  public tick(_deltaTime: number): void {
+    if (this.sceneGraphDirty) {
+      this.sortSceneGraph();
+      this.sceneGraphDirty = false;
+    }
+
+    // --- ACTUALIZACIÓN DE MATRICES (LINEAL / DOD / ZERO-GC) ---
+    const pool = this.engine.transformPool;
+    const count = this.renderSequence.length;
+
+    for (let i = 0; i < count; i++) {
+      const actor = this.renderSequence[i];
+
+      if (actor.parentId !== null) {
+        // Al estar ordenados topológicamente, podemos garantizar que la matriz del padre ya fue calculada.
+        const parentGlobalMatrix = pool.getModelMatrix(actor.parentId);
+        pool.updateActorGlobalMatrix(actor.id, parentGlobalMatrix);
+      } else {
+        // Transformación de raíz (Espacio Mundo = Espacio Local)
+        pool.updateActorGlobalMatrix(actor.id);
+      }
+    }
+
+    // Lógica adicional de sistemas (Físicas, I.A, etc) vendría aquí.
+  }
+
   public getActors(): Map<number, SActor> {
     return this.actors;
   }
 
-  /**
-   * Desplaza el origen del mundo para mantener la precisión de punto flotante (Rebase).
-   * @param offsetX Desplazamiento en X.
-   * @param offsetY Desplazamiento en Y.
-   * @param offsetZ Desplazamiento en Z.
-   */
   public shiftOrigin(offsetX: number, offsetY: number, offsetZ: number): void {
     for (const actor of this.actors.values()) {
       actor.setPosition(
@@ -88,7 +161,8 @@ export class SWorld {
         actor.z - offsetZ
       );
     }
-    Logger.info('WORLD', `Origin Shift ejecutado. Offset: [${offsetX.toFixed(2)}, ${offsetY.toFixed(2)}, ${offsetZ.toFixed(2)}]`);
+    this.markSceneGraphDirty();
+    Logger.info('WORLD', `Origin Shift: [${offsetX.toFixed(2)}, ${offsetY.toFixed(2)}, ${offsetZ.toFixed(2)}]`);
   }
 
   public getEntityManager(): EntityManager {
