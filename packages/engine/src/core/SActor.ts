@@ -1,4 +1,5 @@
 import { SStaticMeshComponent } from '../components/SStaticMeshComponent';
+import { AABB } from '../math/AABB';
 
 /**
  * Interfaz mínima para evitar dependencias circulares con SerionEngine.
@@ -31,11 +32,23 @@ import { SMaterialComponent } from '../components/SMaterialComponent';
 export class SActor {
   public staticMesh: SStaticMeshComponent | null = null;
   public material: SMaterialComponent | null = null;
+  public readonly worldAABB = new AABB();
 
   constructor(
     public readonly id: number,
     private readonly engine: IEngineProxy
   ) { }
+
+  /**
+   * Actualiza el AABB de mundo basado en la malla actual y la matriz de modelo.
+   * @param modelMatrix Matriz de transformación 4x4.
+   */
+  public updateWorldAABB(modelMatrix: Float32Array): void {
+    if (this.staticMesh && this.staticMesh.mesh) {
+      this.worldAABB.copy(this.staticMesh.mesh.localAABB);
+      this.worldAABB.transform(modelMatrix);
+    }
+  }
 
   // --- ACCESSORS DE POSICIÓN ---
 

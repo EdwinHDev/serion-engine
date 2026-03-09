@@ -230,7 +230,7 @@ export class GeometryRegistry {
     device.queue.writeBuffer(vb, 0, vertices.buffer as ArrayBuffer, vertices.byteOffset, vertices.byteLength);
     const ib = device.createBuffer({ label: `${id}_IB`, size: indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(ib, 0, indices.buffer as ArrayBuffer, indices.byteOffset, indices.byteLength);
-    this.meshes.set(id, new SStaticMesh(id, vb, ib, indices.length));
+    this.meshes.set(id, new SStaticMesh(id, vb, ib, indices.length, vertices));
   }
 
   public getMeshes(): IterableIterator<SStaticMesh> { return this.meshes.values(); }
