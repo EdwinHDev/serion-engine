@@ -10,6 +10,8 @@ import { SMat4 } from './math/SMath';
 import { SGlobalEnvironmentData } from './core/SGlobalEnvironmentData';
 import { CascadedShadowManager } from './lighting/CascadedShadowManager';
 import { SceneBuilder } from './scene/SceneBuilder';
+import { Frustum } from './math/Frustum';
+import { SActor } from './core/SActor';
 
 /**
  * SerionEngine - Clase Maestra.
@@ -32,11 +34,17 @@ export class SerionEngine {
   private freeCameraController: FreeCameraController | null = null;
   private readonly ORIGIN_SHIFT_THRESHOLD = 200000.0; // 2 km
 
+  // --- CULLING PROPERTIES (Zero-GC) ---
+  private mainCameraFrustum = new Frustum();
+  private visibleActors: SActor[] = new Array(10000);
+  private visibleActorCount = 0;
+  private tempModelMatrix = new Float32Array(16);
+
   // Stride 40 floats (160 bytes)
   private batchBuffer = new Float32Array(10000 * 40);
 
-  // Sun Vector (Dir Normalizada)
-  private sunDirectionArray = new Float32Array([0.5, 0.5, -1.0]);
+  // Fallback defaults (evitan basura en el loop)
+  private defaultSunDirection = new Float32Array([0.5, 0.5, -1.0]);
 
   private meshInstanceCounts = new Map<string, number>();
   private meshStartOffsets = new Map<string, number>();
@@ -51,8 +59,8 @@ export class SerionEngine {
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
 
-    // Normalizar sol inicial
-    const d = this.sunDirectionArray;
+    // Normalizar default
+    const d = this.defaultSunDirection;
     const mag = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     d[0] /= mag; d[1] /= mag; d[2] /= mag;
 
@@ -113,26 +121,14 @@ export class SerionEngine {
         // 1. Matriz Cámara Jugador
         this.globalEnvironment.setViewProjectionMatrix(activeCamera.getViewProjectionMatrix());
 
-        // 2. ACTUALIZACIÓN CSM DINÁMICA (Capa 12.6)
-        this.csmManager.update(activeCamera, this.sunDirectionArray, this.globalEnvironment);
+        // 2. ACTUALIZACIÓN DINÁMICA DE ENTORNO (Capa 13.3)
+        this.updateGlobalEnvironment(activeCamera);
 
-        // 3. Camera Position
-        this.globalEnvironment.setCameraPosition(activeCamera.actor.x, activeCamera.actor.y, activeCamera.actor.z);
+        // --- VISIBILITY PHASE (Capa 13.2) ---
 
-        // 4. Sun Data
-        this.globalEnvironment.setSun(
-          this.sunDirectionArray[0],
-          this.sunDirectionArray[1],
-          this.sunDirectionArray[2],
-          120000.0
-        );
 
-        // 5. Atmosphere & Colors
-        this.globalEnvironment.setAtmosphere(
-          [1.0, 0.98, 0.95], 1.0,
-          [0.15, 0.35, 0.75],
-          [0.05, 0.05, 0.05]
-        );
+        // --- VISIBILITY PHASE (Capa 13.2) ---
+        this.performCulling();
 
         // Batch Rendering Pass
         this.renderPBRBatch();
@@ -143,18 +139,107 @@ export class SerionEngine {
   };
 
   /**
+   * Extrae proactivamente los datos de iluminación y atmósfera de la escena.
+   * Centraliza la actualización del GlobalEnvironment y CSM Manager.
+   */
+  private updateGlobalEnvironment(camera: SCamera): void {
+    const actors = this.activeWorld.getActors();
+    let sunFound = false;
+    let atmosphereFound = false;
+
+    // Iteración rápida Zero-GC
+    for (const actor of actors.values()) {
+      // Direccional (Sol)
+      if (!sunFound && actor.directionalLight) {
+        const sun = actor.directionalLight;
+        this.globalEnvironment.setSun(sun.direction[0], sun.direction[1], sun.direction[2], sun.intensity);
+
+        // Sincronizar CSM con la dirección del sol encontrado
+        this.csmManager.update(camera, sun.direction, this.globalEnvironment);
+        sunFound = true;
+      }
+
+      // Atmósfera
+      if (!atmosphereFound && actor.atmosphere) {
+        const atmo = actor.atmosphere;
+        this.globalEnvironment.setAtmosphere(
+          atmo.skyColor as any, atmo.ambientIntensity,
+          atmo.skyColor as any, // Por ahora el Zenith usa el SkyColor
+          atmo.groundColor as any
+        );
+        atmosphereFound = true;
+      }
+
+      if (sunFound && atmosphereFound) break;
+    }
+
+    // Fallbacks si no hay componentes en la escena
+    if (!sunFound) {
+      this.globalEnvironment.setSun(this.defaultSunDirection[0], this.defaultSunDirection[1], this.defaultSunDirection[2], 0.0);
+      this.csmManager.update(camera, this.defaultSunDirection, this.globalEnvironment);
+    }
+    if (!atmosphereFound) {
+      this.globalEnvironment.setAtmosphere([0, 0, 0], 0, [0, 0, 0], [0, 0, 0]);
+    }
+
+    // Posición física (independiente de componentes)
+    this.globalEnvironment.setCameraPosition(camera.actor.x, camera.actor.y, camera.actor.z);
+  }
+
+  /**
+   * Fase de descarte geométrico (Frustum Culling).
+   * Determina qué actores son visibles para la cámara principal.
+   */
+  private performCulling(): void {
+    this.visibleActorCount = 0;
+
+    // 1. Extraer planos del frustum desde la matriz VP (NDC WebGPU 0-1)
+    const vpMatrix = this.globalEnvironment.buffer.subarray(0, 16);
+    this.mainCameraFrustum.setFromProjectionMatrix(vpMatrix);
+
+    const rawTransforms = this.transformPool.getRawData();
+    const actors = this.activeWorld.getActors();
+
+    // 2. Evaluar visibilidad (AABB interseca Frustum)
+    for (const actor of actors.values()) {
+      if (!actor.staticMesh) continue;
+
+      const mesh = this.geometryRegistry.getMesh(actor.staticMesh.meshId);
+      if (!mesh) continue;
+
+      // Calcular matriz de modelo JIT para el AABB
+      SMat4.fromRotationTranslationScale(
+        this.tempModelMatrix,
+        rawTransforms.subarray(actor.id * 16 + 3, actor.id * 16 + 7),
+        rawTransforms.subarray(actor.id * 16, actor.id * 16 + 3),
+        rawTransforms.subarray(actor.id * 16 + 7, actor.id * 16 + 10),
+        0
+      );
+
+      // Actualizar World AABB
+      actor.updateWorldAABB(mesh.localAABB, this.tempModelMatrix);
+
+      // Prueba de intersección
+      if (this.mainCameraFrustum.intersectsAABB(actor.worldAABB)) {
+        if (this.visibleActorCount < 10000) {
+          this.visibleActors[this.visibleActorCount++] = actor;
+        }
+      }
+    }
+  }
+
+  /**
    * Procesa todas las entidades visibles y organiza sus datos en el buffer de instancias.
    * Optimización: Agrupa por malla para minimizar cambios de estado en la GPU.
    */
   private renderPBRBatch(): void {
-    const actors = this.activeWorld.getActors();
-
-    // 1. Contar instancias por malla (Reutilizando Mapas para Zero-GC)
+    // 1. Contar instancias por malla (Solo sobre los visibles)
     for (const mesh of this.geometryRegistry.getMeshes()) {
       this.meshInstanceCounts.set(mesh.id, 0);
     }
 
-    for (const actor of actors.values()) {
+    for (let i = 0; i < this.visibleActorCount; i++) {
+      const actor = this.visibleActors[i];
       if (actor.staticMesh) {
         const id = actor.staticMesh.meshId;
         this.meshInstanceCounts.set(id, (this.meshInstanceCounts.get(id) || 0) + 1);
@@ -197,9 +282,9 @@ export class SerionEngine {
    */
   private updateInstanceBuffers(): void {
     const rawTransforms = this.transformPool.getRawData();
-    const actors = this.activeWorld.getActors();
 
-    for (const actor of actors.values()) {
+    for (let i = 0; i < this.visibleActorCount; i++) {
+      const actor = this.visibleActors[i];
       if (actor.staticMesh) {
         const id = actor.staticMesh.meshId;
         const targetOffset = this.meshStartOffsets.get(id)!;

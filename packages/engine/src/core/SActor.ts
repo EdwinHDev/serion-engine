@@ -1,4 +1,6 @@
 import { SStaticMeshComponent } from '../components/SStaticMeshComponent';
+import { SDirectionalLightComponent } from '../components/SDirectionalLightComponent';
+import { SAtmosphereComponent } from '../components/SAtmosphereComponent';
 import { AABB } from '../math/AABB';
 
 /**
@@ -32,6 +34,8 @@ import { SMaterialComponent } from '../components/SMaterialComponent';
 export class SActor {
   public staticMesh: SStaticMeshComponent | null = null;
   public material: SMaterialComponent | null = null;
+  public directionalLight: SDirectionalLightComponent | null = null;
+  public atmosphere: SAtmosphereComponent | null = null;
   public readonly worldAABB = new AABB();
 
   constructor(

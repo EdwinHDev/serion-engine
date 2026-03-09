@@ -1,6 +1,8 @@
 import { SWorld } from '../core/SWorld';
 import { SStaticMeshComponent } from '../components/SStaticMeshComponent';
 import { SMaterialComponent } from '../components/SMaterialComponent';
+import { SDirectionalLightComponent } from '../components/SDirectionalLightComponent';
+import { SAtmosphereComponent } from '../components/SAtmosphereComponent';
 
 /**
  * SceneBuilder - Encargado de la construcción de escenarios y prototipado.
@@ -28,6 +30,19 @@ export class SceneBuilder {
     this.spawnShowcaseActor(world, 'Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4);      // Aluminio
     this.spawnShowcaseActor(world, 'Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9);    // Goma
     this.spawnShowcaseActor(world, 'Primitive_Capsule', 400, 0, 150, [1.0, 0.4, 0.2], 1.0, 0.15);   // Cobre
+
+    // 3. Actores de Entorno (Sin Geometría)
+    const sunActor = world.spawnActor();
+    sunActor.directionalLight = new SDirectionalLightComponent();
+    sunActor.directionalLight.setColor(1.0, 0.98, 0.95);
+    sunActor.directionalLight.setIntensity(120000.0);
+    sunActor.directionalLight.setDirection(0.5, 0.5, -1.0);
+
+    const atmosphereActor = world.spawnActor();
+    atmosphereActor.atmosphere = new SAtmosphereComponent();
+    atmosphereActor.atmosphere.setSkyColor(0.15, 0.35, 0.75);
+    atmosphereActor.atmosphere.setGroundColor(0.05, 0.05, 0.05);
+    atmosphereActor.atmosphere.setAmbientIntensity(1.0);
   }
 
   /**
