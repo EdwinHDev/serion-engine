@@ -88,4 +88,12 @@ export class SGlobalEnvironmentData {
     this.buffer[70] = groundColor[2];
     this.buffer[71] = 1.0;
   }
+
+  /**
+   * Getters primitivos para el color del cielo (Zero-GC).
+   * Utilizados por el RHI para sincronizar el Clear Color.
+   */
+  public getSkyColorR(): number { return this.buffer[64]; }
+  public getSkyColorG(): number { return this.buffer[65]; }
+  public getSkyColorB(): number { return this.buffer[66]; }
 }

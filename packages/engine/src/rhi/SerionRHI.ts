@@ -331,6 +331,12 @@ export class SerionRHI {
     // 2. PASE DE BELLEZA (Beauty Pass)
     const attachments = this.mainPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
     attachments[0].view = this.context.getCurrentTexture().createView();
+    attachments[0].clearValue = {
+      r: globalEnvData.getSkyColorR(),
+      g: globalEnvData.getSkyColorG(),
+      b: globalEnvData.getSkyColorB(),
+      a: 1.0
+    };
 
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
     mainPass.setPipeline(this.renderPipeline);
