@@ -25,9 +25,26 @@ export class SCamera {
   ) { }
 
   /**
+   * Retorna la matriz de vista actualizada de la cámara.
+   */
+  public getViewMatrix(): Float32Array {
+    this.updateMatrices();
+    return this.viewMatrix;
+  }
+
+  /**
    * Calcula y retorna la matriz combinada View-Projection.
    */
   public getViewProjectionMatrix(): Float32Array {
+    this.updateMatrices();
+    SMat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
+    return this.viewProjMatrix;
+  }
+
+  /**
+   * Actualiza las matrices de vista y proyección basadas en el estado actual.
+   */
+  private updateMatrices(): void {
     // 1. Matriz de Proyección
     const fovRad = (this.fov * Math.PI) / 180;
     SMat4.perspective(this.projMatrix, fovRad, this.aspectRatio, this.near, this.far);
@@ -45,16 +62,10 @@ export class SCamera {
     const py = this.actor.y;
     const pz = this.actor.z;
 
-    // Miramos desde la posición del actor hacia (Posición + Forward)
     SMat4.lookAt(this.viewMatrix,
       [px, py, pz],
       [px + forwardX, py + forwardY, pz + forwardZ],
-      [0, 0, 1] // Z es Up siempre
+      [0, 0, 1]
     );
-
-    // 4. Multiplicación final Proj * View
-    SMat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
-
-    return this.viewProjMatrix;
   }
 }

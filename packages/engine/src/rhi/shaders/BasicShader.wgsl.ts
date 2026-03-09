@@ -72,18 +72,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.pbrParams = input.pbrParams;
     out.viewZ = out.position.w; 
 
-    // Dynamic Shadow Bias basado en escala
-    let scaleX = length(input.modelMatrixR0.xyz);
-    let scaleY = length(input.modelMatrixR1.xyz);
-    let scaleZ = length(input.modelMatrixR2.xyz);
-    let avgScale = (scaleX + scaleY + scaleZ) / 3.0;
-    let biasPos = worldPos.xyz + out.worldNormal * (0.5 * avgScale);
-
-    // Proyecciones de Sombra
-    let sPos0 = env.lightViewProj0 * vec4<f32>(biasPos, 1.0);
+    // Proyecciones de Sombra (Hardware Depth Bias activo en Pipeline)
+    let sPos0 = env.lightViewProj0 * vec4<f32>(worldPos.xyz, 1.0);
     out.shadowPos0 = vec3<f32>(sPos0.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), sPos0.z);
     
-    let sPos1 = env.lightViewProj1 * vec4<f32>(biasPos, 1.0);
+    let sPos1 = env.lightViewProj1 * vec4<f32>(worldPos.xyz, 1.0);
     out.shadowPos1 = vec3<f32>(sPos1.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), sPos1.z);
     
     return out;

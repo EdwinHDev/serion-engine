@@ -230,4 +230,59 @@ export class SMat4 {
 
     return true;
   }
+
+  /**
+   * Inversión de matriz 4x4 general.
+   */
+  public static invert(out: Float32Array, a: Float32Array, outOffset = 0, aOffset = 0): boolean {
+    const n11 = a[aOffset + 0], n12 = a[aOffset + 1], n13 = a[aOffset + 2], n14 = a[aOffset + 3];
+    const n21 = a[aOffset + 4], n22 = a[aOffset + 5], n23 = a[aOffset + 6], n24 = a[aOffset + 7];
+    const n31 = a[aOffset + 8], n32 = a[aOffset + 9], n33 = a[aOffset + 10], n34 = a[aOffset + 11];
+    const n41 = a[aOffset + 12], n42 = a[aOffset + 13], n43 = a[aOffset + 14], n44 = a[aOffset + 15];
+
+    const t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
+    const t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44;
+    const t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44;
+    const t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
+
+    const det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
+
+    if (det === 0) return false;
+
+    const invDet = 1.0 / det;
+
+    out[outOffset + 0] = t11 * invDet;
+    out[outOffset + 1] = t12 * invDet;
+    out[outOffset + 2] = t13 * invDet;
+    out[outOffset + 3] = t14 * invDet;
+
+    out[outOffset + 4] = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * invDet;
+    out[outOffset + 5] = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * invDet;
+    out[outOffset + 6] = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * invDet;
+    out[outOffset + 7] = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * invDet;
+
+    out[outOffset + 8] = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * invDet;
+    out[outOffset + 9] = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * invDet;
+    out[outOffset + 10] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * invDet;
+    out[outOffset + 11] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * invDet;
+
+    out[outOffset + 12] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * invDet;
+    out[outOffset + 13] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * invDet;
+    out[outOffset + 14] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * invDet;
+    out[outOffset + 15] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * invDet;
+
+    return true;
+  }
+
+  /**
+   * Transforma un vector 3D por una matriz 4x4 (asumiendo W=1).
+   */
+  public static transformMat4(out: Float32Array, a: Float32Array, m: Float32Array, outOffset = 0, aOffset = 0, mOffset = 0): void {
+    const x = a[aOffset + 0], y = a[aOffset + 1], z = a[aOffset + 2];
+    let w = m[mOffset + 3] * x + m[mOffset + 7] * y + m[mOffset + 11] * z + m[mOffset + 15];
+    w = w || 1.0;
+    out[outOffset + 0] = (m[mOffset + 0] * x + m[mOffset + 4] * y + m[mOffset + 8] * z + m[mOffset + 12]) / w;
+    out[outOffset + 1] = (m[mOffset + 1] * x + m[mOffset + 5] * y + m[mOffset + 9] * z + m[mOffset + 13]) / w;
+    out[outOffset + 2] = (m[mOffset + 2] * x + m[mOffset + 6] * y + m[mOffset + 10] * z + m[mOffset + 14]) / w;
+  }
 }

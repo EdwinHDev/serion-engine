@@ -9,36 +9,34 @@ import { GeometryRegistry } from './geometry/GeometryRegistry';
 import { SStaticMeshComponent } from './components/SStaticMeshComponent';
 import { SMaterialComponent } from './components/SMaterialComponent';
 import { SMat4 } from './math/SMath';
+import { SGlobalEnvironmentData } from './core/SGlobalEnvironmentData';
+import { CascadedShadowManager } from './lighting/CascadedShadowManager';
 
 /**
  * SerionEngine - Clase Maestra.
- * Capa 12: Cascaded Shadow Maps (CSM) y Multi-Pass RHI.
+ * Capa 12.6: Gestor CSM Dinámico.
  */
 export class SerionEngine {
   public readonly transformPool: TransformPool;
   public readonly activeWorld: SWorld;
   public readonly cameraManager: CameraManager;
   public readonly geometryRegistry: GeometryRegistry;
+  public readonly globalEnvironment = new SGlobalEnvironmentData();
 
   private rhi: SerionRHI;
+  private csmManager = new CascadedShadowManager();
+
   private isRunning: boolean = false;
   private lastTime: number = 0;
-  private animationFrameId: number = 0;
+  private animationFrameid: number = 0;
 
   private freeCameraController: FreeCameraController | null = null;
 
-  // Stride 40 floats (160 bytes) - Capa 11
+  // Stride 40 floats (160 bytes)
   private batchBuffer = new Float32Array(10000 * 40);
-  // Extended Uniforms (72 floats / 288 bytes) - Capa 12.3
-  private globalEnvData = new Float32Array(72);
 
-  // Light Cam Zero-GC Helpers
-  private lightView = new Float32Array(16);
-  private lightOrtho0 = new Float32Array(16);
-  private lightOrtho1 = new Float32Array(16);
-  private lightPos = new Float32Array([0, 0, 0]);
-  private lightTarget = new Float32Array([0, 0, 0]);
-  private lightUp = new Float32Array([0, 0, 1]);
+  // Sun Vector (Dir Normalizada)
+  private sunDirectionArray = new Float32Array([0.5, 0.5, -1.0]);
 
   private meshInstanceCounts = new Map<string, number>();
   private meshStartOffsets = new Map<string, number>();
@@ -52,6 +50,11 @@ export class SerionEngine {
     const maxEntities = 10100;
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
+
+    // Normalizar sol inicial
+    const d = this.sunDirectionArray;
+    const mag = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    d[0] /= mag; d[1] /= mag; d[2] /= mag;
 
     Logger.info('ENGINE', "Motor inicializado.");
   }
@@ -78,7 +81,7 @@ export class SerionEngine {
       floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
       floor.material = new SMaterialComponent();
       floor.material.setColor(0.6, 0.6, 0.6);
-      floor.material.setPBR(0.0, 0.7); // 0% Metálico, 70% Rugoso (Mate)
+      floor.material.setPBR(0.0, 0.7);
 
       // Figuras para proyectar sombras
       this.spawnShowcaseActor('Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);    // Oro
@@ -89,9 +92,9 @@ export class SerionEngine {
 
       this.isRunning = true;
       this.lastTime = performance.now();
-      this.animationFrameId = requestAnimationFrame(this.loop);
+      this.animationFrameid = requestAnimationFrame(this.loop);
 
-      Logger.info('ENGINE', "Capa 12: Cascaded Shadows Active.");
+      Logger.info('ENGINE', "Capa 12.6: Gestor CSM Dinámico Activo.");
     } catch (error) {
       Logger.error('ENGINE', "Fallo crítico:", error as any);
       throw error;
@@ -110,7 +113,7 @@ export class SerionEngine {
 
   private loop = (currentTime: number): void => {
     if (!this.isRunning) return;
-    this.animationFrameId = requestAnimationFrame(this.loop);
+    this.animationFrameid = requestAnimationFrame(this.loop);
 
     try {
       const deltaTime = (currentTime - this.lastTime) / 1000;
@@ -123,64 +126,29 @@ export class SerionEngine {
       if (activeCamera) {
         activeCamera.aspectRatio = this.rhi.getAspectRatio();
 
-        // 1. Camera Matrices
-        this.globalEnvData.set(activeCamera.getViewProjectionMatrix(), 0);
+        // 1. Matriz Cámara Jugador
+        this.globalEnvironment.setViewProjectionMatrix(activeCamera.getViewProjectionMatrix());
 
-        // 2. Light Projections (Cascades)
-        const sunDirX = 0.5, sunDirY = 0.5, sunDirZ = -1.0;
-        const mag = Math.sqrt(sunDirX * sunDirX + sunDirY * sunDirY + sunDirZ * sunDirZ);
-        const lDirX = sunDirX / mag, lDirY = sunDirY / mag, lDirZ = sunDirZ / mag;
+        // 2. ACTUALIZACIÓN CSM DINÁMICA (Capa 12.6)
+        this.csmManager.update(activeCamera, this.sunDirectionArray, this.globalEnvironment);
 
-        // View Matrix de la Luz (Centrada en la cámara del jugador)
-        this.lightPos[0] = activeCamera.actor.x;
-        this.lightPos[1] = activeCamera.actor.y;
-        this.lightPos[2] = activeCamera.actor.z;
-        this.lightTarget[0] = this.lightPos[0] + lDirX;
-        this.lightTarget[1] = this.lightPos[1] + lDirY;
-        this.lightTarget[2] = this.lightPos[2] + lDirZ;
-        SMat4.lookAt(this.lightView, this.lightPos, this.lightTarget, this.lightUp);
+        // 3. Camera Position
+        this.globalEnvironment.setCameraPosition(activeCamera.actor.x, activeCamera.actor.y, activeCamera.actor.z);
 
-        // Cascade 0: Near Detail (15m)
-        SMat4.ortho(this.lightOrtho0, -1500, 1500, -1500, 1500, -5000, 5000);
-        SMat4.multiply(this.globalEnvData, this.lightOrtho0, this.lightView, 16);
+        // 4. Sun Data
+        this.globalEnvironment.setSun(
+          this.sunDirectionArray[0],
+          this.sunDirectionArray[1],
+          this.sunDirectionArray[2],
+          120000.0
+        );
 
-        // Cascade 1: Far Environment (150m)
-        SMat4.ortho(this.lightOrtho1, -15000, 15000, -15000, 15000, -20000, 20000);
-        SMat4.multiply(this.globalEnvData, this.lightOrtho1, this.lightView, 32);
-
-        // 3. Splits and Params (Offset 48)
-        this.globalEnvData[48] = 1500.0; // 15m split
-        this.globalEnvData[49] = 15000.0; // 150m split
-
-        // 4. Camera Position (Offset 52)
-        this.globalEnvData[52] = activeCamera.actor.x;
-        this.globalEnvData[53] = activeCamera.actor.y;
-        this.globalEnvData[54] = activeCamera.actor.z;
-        this.globalEnvData[55] = 1.0; // Padding
-
-        // 5. Sun Direction & Intensity (Offset 56)
-        this.globalEnvData[56] = lDirX;
-        this.globalEnvData[57] = lDirY;
-        this.globalEnvData[58] = lDirZ;
-        this.globalEnvData[59] = 120000.0; // Lux
-
-        // 6. Sun Color & Ambient (Offset 60)
-        this.globalEnvData[60] = 1.0;
-        this.globalEnvData[61] = 0.98;
-        this.globalEnvData[62] = 0.95;
-        this.globalEnvData[63] = 1.0; // Ambient Intensity
-
-        // 7. Sky Color (Offset 64)
-        this.globalEnvData[64] = 0.15;
-        this.globalEnvData[65] = 0.35;
-        this.globalEnvData[66] = 0.75;
-        this.globalEnvData[67] = 1.0; // Alpha/Padding
-
-        // 8. Ground Color (Offset 68)
-        this.globalEnvData[68] = 0.05;
-        this.globalEnvData[69] = 0.05;
-        this.globalEnvData[70] = 0.05;
-        this.globalEnvData[71] = 1.0; // Alpha/Padding
+        // 5. Atmosphere & Colors
+        this.globalEnvironment.setAtmosphere(
+          [1.0, 0.98, 0.95], 1.0,
+          [0.15, 0.35, 0.75],
+          [0.05, 0.05, 0.05]
+        );
 
         // Batch Rendering Pass
         this.renderPBRBatch();
@@ -246,13 +214,13 @@ export class SerionEngine {
 
     if (totalInstances > 0) {
       const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
-      this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvData, activeView);
+      this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment.buffer, activeView);
     }
   }
 
   public stop(): void {
     this.isRunning = false;
-    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    if (this.animationFrameid) cancelAnimationFrame(this.animationFrameid);
   }
 
   public getRHI(): SerionRHI { return this.rhi; }

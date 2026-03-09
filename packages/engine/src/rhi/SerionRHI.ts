@@ -10,7 +10,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 12.4: CSM, Sincronización 288 bytes y Shadow Bind Group Isolation.
+ * Capa 12.5: Hardware Depth Bias & Clean Code.
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -26,7 +26,7 @@ export class SerionRHI {
   private instanceBuffer: GPUBuffer | null = null;
 
   private cameraBindGroup: GPUBindGroup | null = null;
-  private shadowBindGroup: GPUBindGroup | null = null; // NUEVO: Grupo aislado para evitar el Read/Write Hazard
+  private shadowBindGroup: GPUBindGroup | null = null;
 
   // Shadow Resources
   private shadowTexture0: GPUTexture | null = null;
@@ -75,7 +75,7 @@ export class SerionRHI {
 
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
 
-    // 1. Layout Principal (Cámara del Jugador: Lee Uniforms + 2 Texturas de Sombra + Sampler)
+    // 1. Layout Principal (Cámara Jugador)
     const envLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -86,7 +86,7 @@ export class SerionRHI {
     });
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
 
-    // 2. NUEVO: Layout de Sombras (Cámara del Sol: Solo lee Uniforms, NO TEXTURAS)
+    // 2. Layout Sombras (Cámara Sol)
     const shadowEnvLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }
@@ -130,12 +130,19 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Shadow Pipeline (Usa su propio Layout minimalista)
+    // Shadow Pipeline (Hardware Bias Activo)
     this.shadowPipeline = this.device.createRenderPipeline({
-      layout: shadowPipelineLayout, // <--- Conectado al nuevo layout aislado
+      layout: shadowPipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' }
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth32float',
+        depthBias: 3,
+        depthBiasSlopeScale: 2.0,
+        depthBiasClamp: 0.0
+      }
     });
 
     // Buffers a 288 Bytes
@@ -144,7 +151,7 @@ export class SerionRHI {
 
     this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
 
-    // Grupo de la Cámara Principal (Uniforms + Lectura de Texturas)
+    // Cámara Principal
     this.cameraBindGroup = this.device.createBindGroup({
       layout: envLayout,
       entries: [
@@ -155,7 +162,7 @@ export class SerionRHI {
       ]
     });
 
-    // NUEVO: Grupo de las Sombras (Solo Uniforms)
+    // Sombras
     this.shadowBindGroup = this.device.createBindGroup({
       layout: shadowEnvLayout,
       entries: [
@@ -250,14 +257,14 @@ export class SerionRHI {
     // PASS 0: Shadow Cascade 0
     const pass0 = encoder.beginRenderPass(this.shadowPassDescriptor0!);
     pass0.setPipeline(this.shadowPipeline!);
-    pass0.setBindGroup(0, this.shadowBindGroup!); // <--- Usamos el grupo aislado, cero errores
+    pass0.setBindGroup(0, this.shadowBindGroup!);
     this.recordDrawCalls(pass0, drawCalls, activeCallCount);
     pass0.end();
 
     // PASS 1: Shadow Cascade 1
     const pass1 = encoder.beginRenderPass(this.shadowPassDescriptor1!);
     pass1.setPipeline(this.shadowPipeline!);
-    pass1.setBindGroup(0, this.shadowBindGroup!); // <--- Usamos el grupo aislado, cero errores
+    pass1.setBindGroup(0, this.shadowBindGroup!);
     this.recordDrawCalls(pass1, drawCalls, activeCallCount);
     pass1.end();
 
@@ -266,7 +273,7 @@ export class SerionRHI {
     attachments[0].view = this.context.getCurrentTexture().createView();
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
     mainPass.setPipeline(this.renderPipeline);
-    mainPass.setBindGroup(0, this.cameraBindGroup!); // <--- Aquí SÍ leemos las sombras calculadas
+    mainPass.setBindGroup(0, this.cameraBindGroup!);
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
     mainPass.end();
 
