@@ -20,15 +20,21 @@ import { SerionModePanel } from './components/SerionModePanel';
  * Register Custom Elements
  */
 const registerComponents = () => {
-  customElements.define('serion-editor-shell', SerionEditorShell);
-  customElements.define('serion-toolbar', SerionToolbar);
-  customElements.define('serion-viewport', SerionViewport);
-  customElements.define('serion-sidebar', SerionSidebar);
-  customElements.define('serion-content-browser', SerionContentBrowser);
-  customElements.define('serion-status-bar', SerionStatusBar);
-  customElements.define('serion-asset-item', SerionAssetItem);
-  customElements.define('serion-dropdown', SerionDropdown);
-  customElements.define('serion-mode-panel', SerionModePanel);
+  // Función auxiliar para registrar de forma segura (Compatible con Vite HMR)
+  const defineSafe = (tag: string, constructor: CustomElementConstructor) => {
+    if (!customElements.get(tag)) {
+      customElements.define(tag, constructor);
+    }
+  };
+  defineSafe('serion-editor-shell', SerionEditorShell);
+  defineSafe('serion-toolbar', SerionToolbar);
+  defineSafe('serion-viewport', SerionViewport);
+  defineSafe('serion-sidebar', SerionSidebar);
+  defineSafe('serion-content-browser', SerionContentBrowser);
+  defineSafe('serion-status-bar', SerionStatusBar);
+  defineSafe('serion-asset-item', SerionAssetItem);
+  defineSafe('serion-dropdown', SerionDropdown);
+  defineSafe('serion-mode-panel', SerionModePanel);
 };
 
 // Initialize Application

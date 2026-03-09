@@ -31,6 +31,10 @@ export class SerionEngine {
   private lastTime: number = 0;
   private animationFrameid: number = 0;
 
+  // --- TELEMETRY ---
+  private lastTelemetryTime = 0;
+  private telemetryFrames = 0;
+
   private freeCameraController: FreeCameraController | null = null;
   private readonly ORIGIN_SHIFT_THRESHOLD = 200000.0; // 2 km
 
@@ -133,6 +137,25 @@ export class SerionEngine {
 
         // Batch Rendering Pass
         this.renderPBRBatch();
+
+        // --- TELEMETRY PHASE (Capa 13.6) ---
+        this.telemetryFrames++;
+        if (currentTime - this.lastTelemetryTime >= 500) {
+          const fps = Math.round((this.telemetryFrames * 1000) / (currentTime - this.lastTelemetryTime));
+          const ms = (currentTime - this.lastTelemetryTime) / this.telemetryFrames;
+
+          window.dispatchEvent(new CustomEvent('serion:telemetry', {
+            detail: {
+              fps: fps,
+              ms: ms.toFixed(1),
+              visibleActors: this.visibleActorCount,
+              totalActors: this.activeWorld.getActors().size
+            }
+          }));
+
+          this.lastTelemetryTime = currentTime;
+          this.telemetryFrames = 0;
+        }
       }
     } catch (e) {
       Logger.warn("ENGINE", "Error en frame CSM: " + e);
