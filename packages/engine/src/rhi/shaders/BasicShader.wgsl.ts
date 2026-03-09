@@ -162,4 +162,20 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(finalColor, input.baseColor.a);
 }
+
+@vertex
+fn shadow_vs_main_c0(input: VertexInput) -> @builtin(position) vec4<f32> {
+    let modelMatrix = mat4x4<f32>(
+        input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3
+    );
+    return env.lightViewProj0 * modelMatrix * vec4<f32>(input.position, 1.0);
+}
+
+@vertex
+fn shadow_vs_main_c1(input: VertexInput) -> @builtin(position) vec4<f32> {
+    let modelMatrix = mat4x4<f32>(
+        input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3
+    );
+    return env.lightViewProj1 * modelMatrix * vec4<f32>(input.position, 1.0);
+}
 `;

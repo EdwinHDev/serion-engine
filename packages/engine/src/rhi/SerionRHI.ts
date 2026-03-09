@@ -20,7 +20,8 @@ export class SerionRHI {
   private format: GPUTextureFormat = 'bgra8unorm';
 
   private renderPipeline: GPURenderPipeline | null = null;
-  private shadowPipeline: GPURenderPipeline | null = null;
+  private shadowPipeline0: GPURenderPipeline | null = null;
+  private shadowPipeline1: GPURenderPipeline | null = null;
 
   private cameraBuffer: GPUBuffer | null = null;
   private instanceBuffer: GPUBuffer | null = null;
@@ -130,10 +131,24 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Shadow Pipeline (Hardware Bias Activo)
-    this.shadowPipeline = this.device.createRenderPipeline({
+    // Shadow Pipelines (Aislamiento de Entry Points)
+    this.shadowPipeline0 = this.device.createRenderPipeline({
       layout: shadowPipelineLayout,
-      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: shaderModule, entryPoint: 'shadow_vs_main_c0', buffers: vertexBuffers },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth32float',
+        depthBias: 3,
+        depthBiasSlopeScale: 2.0,
+        depthBiasClamp: 0.0
+      }
+    });
+
+    this.shadowPipeline1 = this.device.createRenderPipeline({
+      layout: shadowPipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'shadow_vs_main_c1', buffers: vertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: {
         depthWriteEnabled: true,
@@ -256,14 +271,14 @@ export class SerionRHI {
 
     // PASS 0: Shadow Cascade 0
     const pass0 = encoder.beginRenderPass(this.shadowPassDescriptor0!);
-    pass0.setPipeline(this.shadowPipeline!);
+    pass0.setPipeline(this.shadowPipeline0!);
     pass0.setBindGroup(0, this.shadowBindGroup!);
     this.recordDrawCalls(pass0, drawCalls, activeCallCount);
     pass0.end();
 
     // PASS 1: Shadow Cascade 1
     const pass1 = encoder.beginRenderPass(this.shadowPassDescriptor1!);
-    pass1.setPipeline(this.shadowPipeline!);
+    pass1.setPipeline(this.shadowPipeline1!);
     pass1.setBindGroup(0, this.shadowBindGroup!);
     this.recordDrawCalls(pass1, drawCalls, activeCallCount);
     pass1.end();

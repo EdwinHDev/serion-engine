@@ -86,9 +86,11 @@ export class CascadedShadowManager {
     }
 
     // E. Crear la proyección ortográfica envolvente
-    // Extendemos un poco hacia atrás (Z) para evitar clipping de objetos altos fuera de cámara
-    const zExtend = 10000;
-    SMat4.ortho(this.lightOrtho, minX, maxX, minY, maxY, minZ - zExtend, maxZ + 2000);
+    // La cámara mira a -Z, por tanto maxZ es el punto más cercano (distancia = -maxZ).
+    const nearClip = -maxZ - 20000; // Retrocedemos 200m para capturar oclusores detrás de la cámara
+    const farClip = -minZ + 20000;  // Extendemos 200m para capturar receptores lejanos
+
+    SMat4.ortho(this.lightOrtho, minX, maxX, minY, maxY, nearClip, farClip);
 
     // F. Final VP y Envío
     SMat4.multiply(this.lightViewProj, this.lightOrtho, this.lightView);
