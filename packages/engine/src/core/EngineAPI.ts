@@ -71,16 +71,6 @@ export class EngineAPI {
           modified = true;
         } else if (property === 'rotation') {
           actor.setRotation(value[0], value[1], value[2], value[3]);
-          
-          // Sincronización de Luz Física: Si el actor tiene luz, actualizar su dirección
-          if (actor.directionalLight) {
-            const qx = value[0], qy = value[1], qz = value[2], qw = value[3];
-            // Forward Vector (+X) rotado por el cuaternión (estándar Z-Up)
-            const dx = 1.0 - 2.0 * (qy * qy + qz * qz);
-            const dy = 2.0 * (qx * qy + qw * qz);
-            const dz = 2.0 * (qx * qz - qw * qy);
-            actor.directionalLight.setDirection(dx, dy, dz);
-          }
           modified = true;
         } else if (property === 'scale') {
           actor.setScale(value[0], value[1], value[2]);

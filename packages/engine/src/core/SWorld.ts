@@ -1,6 +1,7 @@
 import { EntityManager } from './EntityManager';
 import { SActor } from './SActor';
 import { Logger } from '../utils/Logger';
+import { AtmosphereSystem } from '../lighting/AtmosphereSystem';
 
 /**
  * SWorld - Contenedor Lógico de la Simulación.
@@ -134,17 +135,35 @@ export class SWorld {
     const pool = this.engine.transformPool;
     const count = this.renderSequence.length;
 
+    let mainSun: SActor | null = null;
+    let atmoActor: SActor | null = null;
+
     for (let i = 0; i < count; i++) {
       const actor = this.renderSequence[i];
 
+      // 1. Actualizar Matriz Global
       if (actor.parentId !== null) {
-        // Al estar ordenados topológicamente, podemos garantizar que la matriz del padre ya fue calculada.
         const parentGlobalMatrix = pool.getModelMatrix(actor.parentId);
         pool.updateActorGlobalMatrix(actor.id, parentGlobalMatrix);
       } else {
-        // Transformación de raíz (Espacio Mundo = Espacio Local)
         pool.updateActorGlobalMatrix(actor.id);
       }
+
+      // 2. Sincronización de Componentes (DOD)
+      if (actor.directionalLight) {
+        // Extraer el Vector Forward (+X) directamente de la matriz final del mundo
+        const m = pool.getModelMatrix(actor.id);
+        actor.directionalLight.setDirection(m[0], m[1], m[2]);
+        mainSun = actor;
+      }
+      if (actor.atmosphere) {
+        atmoActor = actor;
+      }
+    }
+
+    // 3. Simulación Atmosférica en Tiempo Real
+    if (mainSun?.directionalLight && atmoActor?.atmosphere) {
+      AtmosphereSystem.updateTransmittance(mainSun.directionalLight, atmoActor.atmosphere);
     }
 
     // Lógica adicional de sistemas (Físicas, I.A, etc) vendría aquí.
