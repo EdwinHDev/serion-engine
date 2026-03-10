@@ -18,7 +18,7 @@ export class AtmosphereSystem {
     const b = Math.max(0.0, Math.pow(elevation, 0.75) - 0.05);
 
     const extinction = Math.pow(elevation, 0.25);
-    const baseLux = 120000.0;
+    const baseLux = sun.baseIntensity;
 
     sun.intensity = baseLux * extinction;
     sun.setColor(r, g, b);

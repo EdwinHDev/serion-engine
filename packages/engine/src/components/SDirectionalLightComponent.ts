@@ -5,6 +5,7 @@
 export class SDirectionalLightComponent {
   public color = new Float32Array([1.0, 1.0, 1.0]);
   public intensity = 100000.0; // Lux (Luxes en superficie)
+  public baseIntensity = 120000.0; // Intensidad base para el sistema de atmósfera
   public direction = new Float32Array([0.5, 0.5, -1.0]);
 
   constructor() {
@@ -25,7 +26,7 @@ export class SDirectionalLightComponent {
   }
 
   public setIntensity(lux: number): void {
-    this.intensity = lux;
+    this.baseIntensity = lux;
   }
 
   private normalizeDirection(): void {

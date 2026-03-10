@@ -97,49 +97,51 @@ export class SerionDetailsPanel extends HTMLElement {
   }
 
   /**
-   * Configura la lógica de arrastre (scrubbing) sobre una etiqueta para cambiar un input numérico.
+   * Configura la lógica de arrastre (scrubbing) sobre una etiqueta para cambiar un input numérico usando Pointer Lock.
    */
   private setupDraggableLabel(label: HTMLElement, input: HTMLInputElement, sensitivity: number = 1): void {
     let isDragging = false;
-    let startX = 0;
-    let startValue = 0;
+    let accumulatedValue = 0;
 
     const onMouseDown = (e: MouseEvent) => {
       e.preventDefault();
       isDragging = true;
-      startX = e.clientX;
-      startValue = parseFloat(input.value) || 0;
-
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = 'ew-resize';
+      accumulatedValue = parseFloat(input.value) || 0;
+      label.requestPointerLock();
     };
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
+      // En Shadow DOM, document.pointerLockElement devuelve el HOST, 
+      // por lo que debemos comprobar el pointerLockElement de la shadowRoot.
+      const isLocked = document.pointerLockElement === this || this.shadowRoot?.pointerLockElement === label;
+      if (!isDragging || !isLocked) return;
 
-      const deltaX = e.clientX - startX;
-      let newValue = startValue + (deltaX * sensitivity);
+      // movementX nos da los píxeles físicos movidos por el ratón sin importar los bordes de la pantalla
+      accumulatedValue += (e.movementX * sensitivity);
       
       const step = parseFloat(input.step) || 0.01;
+      let displayValue = accumulatedValue;
       if (!isNaN(step) && step > 0) {
-        newValue = Math.round(newValue / step) * step;
+        displayValue = Math.round(accumulatedValue / step) * step;
       }
 
-      input.value = (step < 1) ? newValue.toFixed(2) : Math.round(newValue).toString();
+      input.value = (step < 1) ? displayValue.toFixed(2) : Math.round(displayValue).toString();
       
       // Disparar evento input para que la lógica de mutación reaccione
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
     const onMouseUp = () => {
-      isDragging = false;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = 'default';
+      if (isDragging) {
+        isDragging = false;
+        document.exitPointerLock();
+      }
     };
 
     label.addEventListener('mousedown', onMouseDown);
+    // Estos se añaden al document para asegurar captura global durante el lock
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   }
 
   // ─── Event Handling ─────────────────────────────────────────────────
