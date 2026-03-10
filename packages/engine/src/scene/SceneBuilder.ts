@@ -16,7 +16,7 @@ export class SceneBuilder {
    */
   public static buildShowcase(world: SWorld): void {
     // 1. Suelo de concreto (Pase de sombras receptor temporal)
-    const floor = world.spawnActor();
+    const floor = world.spawnActor('Floor');
     floor.setScale(5000, 5000, 10);
     floor.setPosition(0, 0, 1);
     floor.staticMesh = new SStaticMeshComponent('Primitive_Plane');
@@ -25,20 +25,20 @@ export class SceneBuilder {
     floor.material.setPBR(0.0, 0.7);
 
     // 2. Galería de Primitivas PBR para validación de sombras y materiales
-    this.spawnShowcaseActor(world, 'Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1);      // Oro
-    this.spawnShowcaseActor(world, 'Primitive_Sphere', -200, 0, 150, [1.0, 0.1, 0.1], 0.0, 0.2);    // Plástico
-    this.spawnShowcaseActor(world, 'Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4);     // Aluminio
-    this.spawnShowcaseActor(world, 'Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9);       // Goma
-    this.spawnShowcaseActor(world, 'Primitive_Capsule', 400, 0, 150, [1.0, 0.4, 0.2], 1.0, 0.15);   // Cobre
+    this.spawnShowcaseActor(world, 'Primitive_Cube', -400, 0, 150, [1.0, 0.8, 0.0], 1.0, 0.1, 'Cube');      // Oro
+    this.spawnShowcaseActor(world, 'Primitive_Sphere', -200, 0, 150, [1.0, 0.1, 0.1], 0.0, 0.2, 'Sphere');    // Plástico
+    this.spawnShowcaseActor(world, 'Primitive_Cylinder', 0, 0, 150, [0.9, 0.9, 0.9], 1.0, 0.4, 'Cylinder');     // Aluminio
+    this.spawnShowcaseActor(world, 'Primitive_Cone', 200, 0, 150, [0.1, 0.8, 0.2], 0.0, 0.9, 'Cone');       // Goma
+    this.spawnShowcaseActor(world, 'Primitive_Capsule', 400, 0, 150, [1.0, 0.4, 0.2], 1.0, 0.15, 'Capsule');   // Cobre
 
     // 3. Entorno Físico (Sol y Atmósfera Reactiva)
-    const sunActor = world.spawnActor();
+    const sunActor = world.spawnActor('DirectionalLight (Sun)');
     sunActor.directionalLight = new SDirectionalLightComponent();
     // Inclinamos el Sol cerca del horizonte (Z = -0.15) para forzar la dispersión de Rayleigh
     // El color y la intensidad base ahora son orquestados por AtmosphereSystem en la CPU.
     sunActor.directionalLight.setDirection(0.8, 0.2, -0.15);
 
-    const atmosphereActor = world.spawnActor();
+    const atmosphereActor = world.spawnActor('Atmosphere');
     atmosphereActor.atmosphere = new SAtmosphereComponent();
     atmosphereActor.atmosphere.ambientIntensity = 1.0;
     // Eliminados los colores hardcodeados. El RHI ahora dibuja el SkyShader proceduralmente.
@@ -52,9 +52,10 @@ export class SceneBuilder {
     meshId: string,
     x: number, y: number, z: number,
     color: number[],
-    met: number, rough: number
+    met: number, rough: number,
+    name?: string
   ): void {
-    const actor = world.spawnActor();
+    const actor = world.spawnActor(name);
     actor.setPosition(x, y, z);
     actor.setScale(100, 100, 100);
     actor.staticMesh = new SStaticMeshComponent(meshId);

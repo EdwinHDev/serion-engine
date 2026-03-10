@@ -15,6 +15,7 @@ export class SActor {
   public directionalLight: SDirectionalLightComponent | null = null;
   public atmosphere: SAtmosphereComponent | null = null;
   public readonly worldAABB = new AABB();
+  public name: string = 'Actor';
   public parentId: number | null = null;
 
   constructor(

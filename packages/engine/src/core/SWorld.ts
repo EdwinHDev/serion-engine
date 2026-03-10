@@ -28,9 +28,10 @@ export class SWorld {
   /**
    * Crea un nuevo actor en este mundo.
    */
-  public spawnActor(): SActor {
+  public spawnActor(name?: string): SActor {
     const id = this.entityManager.createEntity();
     const actor = new SActor(id, this);
+    actor.name = name || `Actor_${id}`;
     this.actors.set(actor.id, actor);
     this.renderSequence.push(actor);
     this.markSceneGraphDirty();
@@ -38,7 +39,7 @@ export class SWorld {
     // Emitir evento granular para la UI (Desacoplamiento)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('serion:actor-spawned', {
-        detail: { id: actor.id, name: `Actor_${actor.id}`, parentId: actor.parentId }
+        detail: { id: actor.id, name: actor.name, parentId: actor.parentId }
       }));
     }
 

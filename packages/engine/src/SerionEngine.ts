@@ -85,7 +85,7 @@ export class SerionEngine {
       this.geometryRegistry.initialize(this.rhi.getDevice());
 
       // Showcase Camera
-      const cameraActor = this.activeWorld.spawnActor();
+      const cameraActor = this.activeWorld.spawnActor('Camera');
       cameraActor.setPosition(0, -900, 400);
 
       const mainCamera = new SCamera(cameraActor);
