@@ -323,7 +323,11 @@ export class SerionRHI {
 
     // Carga de datos a la GPU (Zero-GC)
     this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer);
-    this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
+
+    // BLINDAJE: Solo enviamos datos de instancias si realmente hay alguna que pintar
+    if (fullInstanceData.byteLength > 0) {
+      this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
+    }
 
     const encoder = this.device.createCommandEncoder();
 

@@ -303,11 +303,12 @@ export class SerionEngine {
     // 3. Escribir datos de transformación y materiales (CPU -> BatchBuffer)
     if (totalInstances > 0) {
       this.updateInstanceBuffers();
-
-      // 4. Envío único al RHI
-      const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
-      this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment, activeView);
     }
+
+    // 4. EL ARREGLO: Envío continuo al RHI. 
+    // Siempre llamamos a renderFrame para pintar el Cielo y la Rejilla, aunque no haya actores visibles.
+    const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
+    this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment, activeView);
   }
 
   /**
