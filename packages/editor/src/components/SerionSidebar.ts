@@ -1,4 +1,5 @@
 import { EditorState } from '../core/EditorState';
+import './SerionDetailsPanel';
 
 /**
  * SerionSidebar - Virtualized Tree View Outliner & Details Panel.
@@ -273,9 +274,7 @@ export class SerionSidebar extends HTMLElement {
           Details
           <span class="arrow ${isDetailsCollapsed ? 'collapsed' : ''}">▼</span>
         </div>
-        <div class="content">
-          <div class="empty-state">Select an object to see details.</div>
-        </div>
+        <serion-details-panel></serion-details-panel>
       </div>
     `;
 

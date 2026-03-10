@@ -12,6 +12,7 @@ import { AtmosphereSystem } from './lighting/AtmosphereSystem';
 import { SceneBuilder } from './scene/SceneBuilder';
 import { Frustum } from './math/Frustum';
 import { SActor } from './core/SActor';
+import { EngineAPI } from './core/EngineAPI';
 
 
 /**
@@ -27,6 +28,7 @@ export class SerionEngine {
 
   private rhi: SerionRHI;
   private csmManager = new CascadedShadowManager();
+  private api: EngineAPI;
 
   private isRunning: boolean = false;
   private lastTime: number = 0;
@@ -63,6 +65,9 @@ export class SerionEngine {
     const maxEntities = 10100;
     this.transformPool = new TransformPool(maxEntities);
     this.activeWorld = new SWorld(this, maxEntities);
+
+    this.api = new EngineAPI(this);
+    this.api.mount();
 
     // Normalizar default
     const d = this.defaultSunDirection;
