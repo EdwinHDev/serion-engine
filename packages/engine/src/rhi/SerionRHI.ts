@@ -2,6 +2,7 @@ import { Logger } from '../utils/Logger';
 import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 import { GridShaderWGSL } from './shaders/GridShader.wgsl';
 import { SkyShaderWGSL } from './shaders/SkyShader.wgsl';
+import { PostProcessShaderWGSL } from './shaders/PostProcessShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -50,6 +51,14 @@ export class SerionRHI {
   private shadowPassDescriptor1: GPURenderPassDescriptor | null = null;
   private mainPassDescriptor: GPURenderPassDescriptor | null = null;
 
+  // HDR & Post-Process Resources
+  private hdrTexture: GPUTexture | null = null;
+  private hdrTextureView: GPUTextureView | null = null;
+  private postProcessPipeline: GPURenderPipeline | null = null;
+  private postProcessBindGroup: GPUBindGroup | null = null;
+  private postProcessLayout: GPUBindGroupLayout | null = null;
+  private linearSampler: GPUSampler | null = null;
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
 
@@ -76,7 +85,6 @@ export class SerionRHI {
     canvas.height = this.currentHeight;
 
     this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
-    this.createDepthTexture(this.currentWidth, this.currentHeight);
     this.createShadowMaps();
 
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
@@ -90,7 +98,16 @@ export class SerionRHI {
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
       ]
     });
+
+    this.postProcessLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
+    const postProcessPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.postProcessLayout] });
 
     // 2. Layout Sombras (Cámara Sol)
     const shadowEnvLayout = this.device.createBindGroupLayout({
@@ -131,7 +148,7 @@ export class SerionRHI {
     this.renderPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
-      fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
@@ -173,7 +190,7 @@ export class SerionRHI {
         module: this.device.createShaderModule({ code: GridShaderWGSL }),
         entryPoint: 'fs_main',
         targets: [{
-          format: this.format,
+          format: 'rgba16float',
           blend: {
             color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
@@ -188,9 +205,17 @@ export class SerionRHI {
     this.skyPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'vs_main' },
-      fragment: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      fragment: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-strip' },
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less-equal', format: 'depth24plus' }
+    });
+
+    // 3. Post-Process Pipeline
+    this.postProcessPipeline = this.device.createRenderPipeline({
+      layout: postProcessPipelineLayout,
+      vertex: { module: this.device.createShaderModule({ code: PostProcessShaderWGSL }), entryPoint: 'vs_main' },
+      fragment: { module: this.device.createShaderModule({ code: PostProcessShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-strip' }
     });
 
     // Buffer Global de Entorno (320 Bytes / 80 floats)
@@ -198,6 +223,7 @@ export class SerionRHI {
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 
     this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
+    this.linearSampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
     // Cámara Principal
     this.cameraBindGroup = this.device.createBindGroup({
@@ -218,6 +244,10 @@ export class SerionRHI {
       ]
     });
 
+    // LA CIRUGÍA: Movemos la creación de los Targets aquí, 
+    // cuando TODOS los layouts y samplers ya existen en memoria.
+    this.createRenderTargets(this.currentWidth, this.currentHeight);
+
     this.updatePassDescriptors();
   }
 
@@ -234,14 +264,34 @@ export class SerionRHI {
     this.shadowView1 = this.shadowTexture1.createView();
   }
 
-  private createDepthTexture(width: number, height: number): void {
+  private createRenderTargets(width: number, height: number): void {
     if (this.depthTexture) this.depthTexture.destroy();
+    if (this.hdrTexture) this.hdrTexture.destroy();
+
+    // Textura de Profundidad
     this.depthTexture = this.device!.createTexture({
       size: [width, height],
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.depthTextureView = this.depthTexture.createView();
+
+    // Textura HDR Off-Screen (Alta Precisión)
+    this.hdrTexture = this.device!.createTexture({
+      size: [width, height],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.hdrTextureView = this.hdrTexture.createView();
+
+    // BindGroup del Post-Procesado (Zero-GC: Se recrea solo en Resize)
+    this.postProcessBindGroup = this.device!.createBindGroup({
+      layout: this.postProcessLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.hdrTextureView }
+      ]
+    });
   }
 
   private updatePassDescriptors(): void {
@@ -265,8 +315,8 @@ export class SerionRHI {
     };
     this.mainPassDescriptor = {
       colorAttachments: [{
-        view: null as unknown as GPUTextureView,
-        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, // Negro absoluto (Cielo procedural llenará el fondo)
+        view: this.hdrTextureView!, // El Main Pass siempre escribe en el HDR Target
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
@@ -317,7 +367,7 @@ export class SerionRHI {
       this.canvas.width = targetW;
       this.canvas.height = targetH;
       this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
-      this.createDepthTexture(targetW, targetH);
+      this.createRenderTargets(targetW, targetH);
       this.updatePassDescriptors();
     }
 
@@ -335,11 +385,8 @@ export class SerionRHI {
     this.executeShadowPass(encoder, this.shadowPassDescriptor0!, this.shadowPipeline0!, drawCalls, activeCallCount);
     this.executeShadowPass(encoder, this.shadowPassDescriptor1!, this.shadowPipeline1!, drawCalls, activeCallCount);
 
-    // 2. PASE DE BELLEZA (Beauty Pass)
-    const attachments = this.mainPassDescriptor.colorAttachments as GPURenderPassColorAttachment[];
-    attachments[0].view = this.context.getCurrentTexture().createView();
-
-    const mainPass = encoder.beginRenderPass(this.mainPassDescriptor);
+    // 2. PASE DE BELLEZA (Beauty Pass HDR)
+    const mainPass = encoder.beginRenderPass(this.mainPassDescriptor!);
 
     // Objetos Opacos
     mainPass.setPipeline(this.renderPipeline);
@@ -359,6 +406,20 @@ export class SerionRHI {
     }
 
     mainPass.end();
+
+    // 5. PASE DE POST-PROCESADO (Final Output a Pantalla)
+    const postProcessPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.context.getCurrentTexture().createView(),
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    postProcessPass.setPipeline(this.postProcessPipeline!);
+    postProcessPass.setBindGroup(0, this.postProcessBindGroup!);
+    postProcessPass.draw(4, 1, 0, 0);
+    postProcessPass.end();
 
     this.device.queue.submit([encoder.finish()]);
   }

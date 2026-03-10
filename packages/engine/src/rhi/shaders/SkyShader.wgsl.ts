@@ -66,12 +66,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     
     let mieHalo = env.sunColor_Ambient.xyz * (hg1 * 0.05 + hg2 * 0.02) * rayleighFactor;
     let rawColor = max(skyBase + physicalSunDisc + mieHalo, vec3<f32>(0.0));
-    
-    let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-    let mappedColor = clamp((rawColor * (a * rawColor + b)) / (rawColor * (c * rawColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
-    let finalColor = pow(mappedColor, vec3<f32>(1.0 / 2.2));
-    
-    return vec4<f32>(finalColor, 1.0);
+    return vec4<f32>(rawColor, 1.0);
 }
 
 fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
