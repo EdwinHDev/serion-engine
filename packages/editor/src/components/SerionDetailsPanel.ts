@@ -96,6 +96,52 @@ export class SerionDetailsPanel extends HTMLElement {
     ];
   }
 
+  /**
+   * Configura la lógica de arrastre (scrubbing) sobre una etiqueta para cambiar un input numérico.
+   */
+  private setupDraggableLabel(label: HTMLElement, input: HTMLInputElement, sensitivity: number = 1): void {
+    let isDragging = false;
+    let startX = 0;
+    let startValue = 0;
+
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startValue = parseFloat(input.value) || 0;
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = 'ew-resize';
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - startX;
+      let newValue = startValue + (deltaX * sensitivity);
+      
+      const step = parseFloat(input.step) || 0.01;
+      if (!isNaN(step) && step > 0) {
+        newValue = Math.round(newValue / step) * step;
+      }
+
+      input.value = (step < 1) ? newValue.toFixed(2) : Math.round(newValue).toString();
+      
+      // Disparar evento input para que la lógica de mutación reaccione
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = 'default';
+    };
+
+    label.addEventListener('mousedown', onMouseDown);
+  }
+
   // ─── Event Handling ─────────────────────────────────────────────────
 
   private onSelectionChanged(e: CustomEvent): void {
@@ -295,6 +341,13 @@ export class SerionDetailsPanel extends HTMLElement {
           font-size: 9px;
           font-weight: 900;
           color: #fff;
+          cursor: ew-resize;
+          user-select: none;
+          transition: filter 0.1s;
+        }
+
+        .axis-label:hover {
+          filter: brightness(1.2);
         }
 
         .axis-x { background: #e74c3c; }
@@ -612,6 +665,25 @@ export class SerionDetailsPanel extends HTMLElement {
       lightIntensityInput.addEventListener('input', handler);
       lightIntensityInput.addEventListener('change', handler);
     }
+
+    // ─── UX: Drag-to-change (Scrubbing) ───
+    const scrubGroups = [
+      { prefix: 'pos', sensitivity: 0.5 },
+      { prefix: 'sca', sensitivity: 0.5 },
+      { prefix: 'rot', sensitivity: 1.0 }
+    ];
+
+    scrubGroups.forEach(group => {
+      const axes = group.prefix === 'rot' ? ['roll', 'pitch', 'yaw'] : ['x', 'y', 'z'];
+      axes.forEach(axis => {
+        const input = root.getElementById(`${group.prefix}-${axis}`) as HTMLInputElement;
+        const label = input?.previousElementSibling as HTMLElement;
+        
+        if (input && label && label.classList.contains('axis-label')) {
+          this.setupDraggableLabel(label, input, group.sensitivity);
+        }
+      });
+    });
   }
 }
 
