@@ -36,9 +36,16 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // 1. Calculamos el vector de visión desde la cámara hasta este píxel de la grilla
+    let viewDir = normalize(input.worldPos - env.cameraPosition.xyz);
+    
+    // 2. BLINDAJE AAA: Si el ángulo es casi plano (horizonte puro), abortamos el renderizado de la grilla
+    if (abs(viewDir.z) < 0.005) {
+        discard;
+    }
+
     let coord = input.worldPos.xy;
     
-    // BLINDAJE AAA: Evitar división por cero o NaN.
     let derivative = max(fwidth(coord), vec2<f32>(0.00001));
     
     let grid100 = abs(fract(coord / 100.0 - 0.5) - 0.5) / (derivative / 100.0);
