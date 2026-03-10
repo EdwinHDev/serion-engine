@@ -1,5 +1,6 @@
 import { EditorState } from '../core/EditorState';
 import './SerionDetailsPanel';
+import './SerionDetailsPanel';
 
 /**
  * SerionSidebar - Virtualized Tree View Outliner & Details Panel.
@@ -250,7 +251,7 @@ export class SerionSidebar extends HTMLElement {
         .icon { font-size: 10px; margin-right: 6px; opacity: 0.6; }
         .name { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 
-        .content { flex: 1; padding: 1.25rem; overflow-y: auto; color: var(--serion-text-dim); background-color: var(--serion-bg-1); }
+        .content { flex: 1; padding: 0; overflow-y: auto; color: var(--serion-text-dim); background-color: var(--serion-bg-1); }
         .panel.collapsed .content, .panel.collapsed .viewport { display: none; }
 
         .empty-state { font-style: italic; font-size: 11px; opacity: 0.4; }

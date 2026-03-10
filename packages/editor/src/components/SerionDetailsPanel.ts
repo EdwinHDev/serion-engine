@@ -51,7 +51,7 @@ export class SerionDetailsPanel extends HTMLElement {
         <style>
           :host { display: block; padding: 20px; color: var(--serion-text-dim); font-size: 11px; font-style: italic; opacity: 0.5; }
         </style>
-        Select a single object to view details.
+        <div class="empty-state">Select a single object to see details.</div>
       `;
       return;
     }
@@ -60,7 +60,7 @@ export class SerionDetailsPanel extends HTMLElement {
     const actorData = api ? api.getActorData(this.currentActorId) : null;
 
     if (!actorData) {
-      this.shadowRoot.innerHTML = `<div style="padding: 20px;">Error: Engine API not found or Actor data unavailable.</div>`;
+      this.shadowRoot.innerHTML = `<div style="padding: 20px;">Error: Engine API not ready or Actor data unavailable.</div>`;
       return;
     }
 
@@ -98,20 +98,19 @@ export class SerionDetailsPanel extends HTMLElement {
         }
 
         .property-row {
-          display: flex;
+          display: grid;
+          grid-template-columns: 80px 1fr;
           align-items: center;
           margin-bottom: 8px;
-          gap: 12px;
+          gap: 8px;
         }
 
         .property-label {
-          width: 80px;
           font-size: 11px;
           color: var(--serion-text-dim);
         }
 
         .vector-input {
-          flex: 1;
           display: flex;
           gap: 4px;
         }
@@ -141,9 +140,9 @@ export class SerionDetailsPanel extends HTMLElement {
           color: #fff;
         }
 
-        .axis-x { background: #e74c3c; } /* Rojo Unreal */
-        .axis-y { background: #2ecc71; } /* Verde Unreal */
-        .axis-z { background: #3498db; } /* Azul Unreal */
+        .axis-x { background: #e74c3c; } /* Rojo Standard */
+        .axis-y { background: #2ecc71; } /* Verde Standard */
+        .axis-z { background: #3498db; } /* Azul Standard */
 
         input {
           width: 100%;
@@ -159,6 +158,12 @@ export class SerionDetailsPanel extends HTMLElement {
         input::-webkit-inner-spin-button, 
         input::-webkit-outer-spin-button { 
           -webkit-appearance: none; margin: 0; 
+        }
+
+        .empty-state {
+          font-style: italic;
+          font-size: 11px;
+          opacity: 0.5;
         }
 
         .actor-id-tag {
@@ -182,15 +187,15 @@ export class SerionDetailsPanel extends HTMLElement {
             <div class="vector-input">
               <div class="axis-group">
                 <div class="axis-label axis-x">X</div>
-                <input type="number" step="0.1" id="pos-x" value="${pos[0].toFixed(2)}">
+                <input type="number" step="any" id="pos-x" value="${pos[0]}">
               </div>
               <div class="axis-group">
                 <div class="axis-label axis-y">Y</div>
-                <input type="number" step="0.1" id="pos-y" value="${pos[1].toFixed(2)}">
+                <input type="number" step="any" id="pos-y" value="${pos[1]}">
               </div>
               <div class="axis-group">
                 <div class="axis-label axis-z">Z</div>
-                <input type="number" step="0.1" id="pos-z" value="${pos[2].toFixed(2)}">
+                <input type="number" step="any" id="pos-z" value="${pos[2]}">
               </div>
             </div>
           </div>
@@ -200,15 +205,15 @@ export class SerionDetailsPanel extends HTMLElement {
             <div class="vector-input">
               <div class="axis-group">
                 <div class="axis-label axis-x">X</div>
-                <input type="number" step="0.1" id="sca-x" value="${sca[0].toFixed(2)}">
+                <input type="number" step="any" id="sca-x" value="${sca[0]}">
               </div>
               <div class="axis-group">
                 <div class="axis-label axis-y">Y</div>
-                <input type="number" step="0.1" id="sca-y" value="${sca[1].toFixed(2)}">
+                <input type="number" step="any" id="sca-y" value="${sca[1]}">
               </div>
               <div class="axis-group">
                 <div class="axis-label axis-z">Z</div>
-                <input type="number" step="0.1" id="sca-z" value="${sca[2].toFixed(2)}">
+                <input type="number" step="any" id="sca-z" value="${sca[2]}">
               </div>
             </div>
           </div>
@@ -223,22 +228,25 @@ export class SerionDetailsPanel extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
-    const inputs = ['pos-x', 'pos-y', 'pos-z', 'sca-x', 'sca-y', 'sca-z'];
+    const ids = ['pos-x', 'pos-y', 'pos-z', 'sca-x', 'sca-y', 'sca-z'];
 
-    inputs.forEach(id => {
+    ids.forEach(id => {
       const input = root.getElementById(id) as HTMLInputElement;
-      if (input) {
-        input.addEventListener('input', () => {
-          const type = id.startsWith('pos') ? 'position' : 'scale';
-          const prefix = id.startsWith('pos') ? 'pos' : 'sca';
+      if (!input) return;
 
-          const x = parseFloat((root.getElementById(`${prefix}-x`) as HTMLInputElement).value) || 0;
-          const y = parseFloat((root.getElementById(`${prefix}-y`) as HTMLInputElement).value) || 0;
-          const z = parseFloat((root.getElementById(`${prefix}-z`) as HTMLInputElement).value) || 0;
+      const handler = () => {
+        const type = id.startsWith('pos') ? 'position' : 'scale';
+        const prefix = id.startsWith('pos') ? 'pos' : 'sca';
 
-          this.dispatchPropertyChange('transform', type, [x, y, z]);
-        });
-      }
+        const x = parseFloat((root.getElementById(`${prefix}-x`) as HTMLInputElement).value) || 0;
+        const y = parseFloat((root.getElementById(`${prefix}-y`) as HTMLInputElement).value) || 0;
+        const z = parseFloat((root.getElementById(`${prefix}-z`) as HTMLInputElement).value) || 0;
+
+        this.dispatchPropertyChange('transform', type, [x, y, z]);
+      };
+
+      input.addEventListener('input', handler);
+      input.addEventListener('change', handler);
     });
   }
 }
