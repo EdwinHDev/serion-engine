@@ -3,6 +3,7 @@ import { BasicShaderWGSL } from './shaders/BasicShader.wgsl';
 import { GridShaderWGSL } from './shaders/GridShader.wgsl';
 import { SkyShaderWGSL } from './shaders/SkyShader.wgsl';
 import { PostProcessShaderWGSL } from './shaders/PostProcessShader.wgsl';
+import { BloomShaderWGSL } from './shaders/BloomShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -59,6 +60,13 @@ export class SerionRHI {
   private postProcessLayout: GPUBindGroupLayout | null = null;
   private linearSampler: GPUSampler | null = null;
 
+  // Bloom Resources
+  private bloomTexture: GPUTexture | null = null;
+  private bloomTextureView: GPUTextureView | null = null;
+  private bloomPipeline: GPURenderPipeline | null = null;
+  private bloomBindGroup: GPUBindGroup | null = null;
+  private bloomLayout: GPUBindGroupLayout | null = null;
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
 
@@ -102,12 +110,21 @@ export class SerionRHI {
     this.postProcessLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+
+    this.bloomLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
     const postProcessPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.postProcessLayout] });
+    const bloomPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bloomLayout!] });
 
     // 2. Layout Sombras (Cámara Sol)
     const shadowEnvLayout = this.device.createBindGroupLayout({
@@ -218,6 +235,14 @@ export class SerionRHI {
       primitive: { topology: 'triangle-strip' }
     });
 
+    // 4. Bloom Pipeline
+    this.bloomPipeline = this.device.createRenderPipeline({
+      layout: bloomPipelineLayout,
+      vertex: { module: this.device.createShaderModule({ code: BloomShaderWGSL }), entryPoint: 'vs_main' },
+      fragment: { module: this.device.createShaderModule({ code: BloomShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
     // Buffer Global de Entorno (320 Bytes / 80 floats)
     this.cameraBuffer = this.device.createBuffer({ size: 320, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -284,12 +309,31 @@ export class SerionRHI {
     });
     this.hdrTextureView = this.hdrTexture.createView();
 
+    // Textura Bloom (1/4 Resolución)
+    if (this.bloomTexture) this.bloomTexture.destroy();
+    this.bloomTexture = this.device!.createTexture({
+      size: [Math.max(1, Math.floor(width / 4)), Math.max(1, Math.floor(height / 4))],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.bloomTextureView = this.bloomTexture.createView();
+
+    // BindGroup del Bloom
+    this.bloomBindGroup = this.device!.createBindGroup({
+      layout: this.bloomLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.hdrTextureView }
+      ]
+    });
+
     // BindGroup del Post-Procesado (Zero-GC: Se recrea solo en Resize)
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
-        { binding: 1, resource: this.hdrTextureView }
+        { binding: 1, resource: this.hdrTextureView },
+        { binding: 2, resource: this.bloomTextureView }
       ]
     });
   }
@@ -407,7 +451,21 @@ export class SerionRHI {
 
     mainPass.end();
 
-    // 5. PASE DE POST-PROCESADO (Final Output a Pantalla)
+    // 5. PASE DE BLOOM (Extracción HDR @ 1/4 Res)
+    const bloomPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.bloomTextureView!,
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    bloomPass.setPipeline(this.bloomPipeline!);
+    bloomPass.setBindGroup(0, this.bloomBindGroup!);
+    bloomPass.draw(4, 1, 0, 0);
+    bloomPass.end();
+
+    // 6. PASE DE POST-PROCESADO (Final Output a Pantalla)
     const postProcessPass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
