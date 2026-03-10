@@ -44,7 +44,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Extracción de brillo (Threshold > 1.5)
     let brightness = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
     if (brightness > 1.5) {
-        return vec4<f32>(color, 1.0);
+        // Devolver color con multiplicador de intensidad para atenuar aliasing
+        return vec4<f32>(color * 0.5, 1.0);
     }
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }

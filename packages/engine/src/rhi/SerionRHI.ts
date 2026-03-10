@@ -15,7 +15,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 13.10: GPU Sky Pass con Early-Z.
+ * Capa 13.11: Bloom HDR y Post-Processing Stack (Fase 1).
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
