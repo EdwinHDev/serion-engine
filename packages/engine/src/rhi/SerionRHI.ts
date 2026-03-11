@@ -15,7 +15,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 13.11: Bloom HDR y Post-Processing Stack (Fase 1).
+ * Capa 13.12: AAA Separable Gaussian Bloom (Dos Pases).
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -60,11 +60,16 @@ export class SerionRHI {
   private postProcessLayout: GPUBindGroupLayout | null = null;
   private linearSampler: GPUSampler | null = null;
 
-  // Bloom Resources
+  // Bloom Resources (Separable Gaussian)
   private bloomTexture: GPUTexture | null = null;
   private bloomTextureView: GPUTextureView | null = null;
-  private bloomPipeline: GPURenderPipeline | null = null;
-  private bloomBindGroup: GPUBindGroup | null = null;
+  private bloomTempTexture: GPUTexture | null = null;
+  private bloomTempTextureView: GPUTextureView | null = null;
+  
+  private bloomPipelineH: GPURenderPipeline | null = null;
+  private bloomPipelineV: GPURenderPipeline | null = null;
+  private bloomBindGroupH: GPUBindGroup | null = null;
+  private bloomBindGroupV: GPUBindGroup | null = null;
   private bloomLayout: GPUBindGroupLayout | null = null;
 
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
@@ -170,7 +175,7 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Shadow Pipelines (Aislamiento de Entry Points)
+    // Shadow Pipelines 
     this.shadowPipeline0 = this.device.createRenderPipeline({
       layout: shadowPipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'shadow_vs_main_c0', buffers: vertexBuffers },
@@ -199,7 +204,7 @@ export class SerionRHI {
       }
     });
 
-    // Grid Pipeline (Capa 13.4)
+    // Grid Pipeline
     this.gridPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: this.device.createShaderModule({ code: GridShaderWGSL }), entryPoint: 'vs_main' },
@@ -218,7 +223,7 @@ export class SerionRHI {
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' }
     });
 
-    // Sky Pipeline (Capa 13.10)
+    // Sky Pipeline
     this.skyPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: this.device.createShaderModule({ code: SkyShaderWGSL }), entryPoint: 'vs_main' },
@@ -235,15 +240,24 @@ export class SerionRHI {
       primitive: { topology: 'triangle-strip' }
     });
 
-    // 4. Bloom Pipeline
-    this.bloomPipeline = this.device.createRenderPipeline({
+    // 4. Bloom Pipelines (Separable)
+    const bloomShaderModule = this.device.createShaderModule({ code: BloomShaderWGSL });
+    
+    this.bloomPipelineH = this.device.createRenderPipeline({
       layout: bloomPipelineLayout,
-      vertex: { module: this.device.createShaderModule({ code: BloomShaderWGSL }), entryPoint: 'vs_main' },
-      fragment: { module: this.device.createShaderModule({ code: BloomShaderWGSL }), entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
+      vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: bloomShaderModule, entryPoint: 'fs_extract_and_blur_h', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-strip' }
     });
 
-    // Buffer Global de Entorno (320 Bytes / 80 floats)
+    this.bloomPipelineV = this.device.createRenderPipeline({
+      layout: bloomPipelineLayout,
+      vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: bloomShaderModule, entryPoint: 'fs_blur_v', targets: [{ format: 'rgba16float' }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
+    // Buffer Global de Entorno
     this.cameraBuffer = this.device.createBuffer({ size: 320, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
 
@@ -269,10 +283,7 @@ export class SerionRHI {
       ]
     });
 
-    // LA CIRUGÍA: Movemos la creación de los Targets aquí, 
-    // cuando TODOS los layouts y samplers ya existen en memoria.
     this.createRenderTargets(this.currentWidth, this.currentHeight);
-
     this.updatePassDescriptors();
   }
 
@@ -301,7 +312,7 @@ export class SerionRHI {
     });
     this.depthTextureView = this.depthTexture.createView();
 
-    // Textura HDR Off-Screen (Alta Precisión)
+    // Textura HDR Off-Screen
     this.hdrTexture = this.device!.createTexture({
       size: [width, height],
       format: 'rgba16float',
@@ -309,31 +320,50 @@ export class SerionRHI {
     });
     this.hdrTextureView = this.hdrTexture.createView();
 
-    // Textura Bloom (1/4 Resolución)
+    // Texturas Bloom (1/4 Resolución)
+    const bloomW = Math.max(1, Math.floor(width / 4));
+    const bloomH = Math.max(1, Math.floor(height / 4));
+
+    if (this.bloomTempTexture) this.bloomTempTexture.destroy();
+    this.bloomTempTexture = this.device!.createTexture({
+      size: [bloomW, bloomH],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.bloomTempTextureView = this.bloomTempTexture.createView();
+
     if (this.bloomTexture) this.bloomTexture.destroy();
     this.bloomTexture = this.device!.createTexture({
-      size: [Math.max(1, Math.floor(width / 4)), Math.max(1, Math.floor(height / 4))],
+      size: [bloomW, bloomH],
       format: 'rgba16float',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
     });
     this.bloomTextureView = this.bloomTexture.createView();
 
-    // BindGroup del Bloom
-    this.bloomBindGroup = this.device!.createBindGroup({
+    // BindGroups Bloom
+    this.bloomBindGroupH = this.device!.createBindGroup({
       layout: this.bloomLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
-        { binding: 1, resource: this.hdrTextureView }
+        { binding: 1, resource: this.hdrTextureView } // H lee del HDR original (Extrae y Blur H)
       ]
     });
 
-    // BindGroup del Post-Procesado (Zero-GC: Se recrea solo en Resize)
+    this.bloomBindGroupV = this.device!.createBindGroup({
+      layout: this.bloomLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.bloomTempTextureView } // V lee del Temp (Blur V)
+      ]
+    });
+
+    // BindGroup Post-Procesado
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
         { binding: 1, resource: this.hdrTextureView },
-        { binding: 2, resource: this.bloomTextureView }
+        { binding: 2, resource: this.bloomTextureView } // Lee del resultado final de Bloom V
       ]
     });
   }
@@ -359,7 +389,7 @@ export class SerionRHI {
     };
     this.mainPassDescriptor = {
       colorAttachments: [{
-        view: this.hdrTextureView!, // El Main Pass siempre escribe en el HDR Target
+        view: this.hdrTextureView!,
         clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
         loadOp: 'clear',
         storeOp: 'store',
@@ -372,9 +402,7 @@ export class SerionRHI {
       }
     };
   }
-  /**
-   * Ejecuta un pase de renderizado de sombras para una cascada específica.
-   */
+
   private executeShadowPass(
     encoder: GPUCommandEncoder,
     descriptor: GPURenderPassDescriptor,
@@ -389,9 +417,6 @@ export class SerionRHI {
     pass.end();
   }
 
-  /**
-   * Renderiza un frame completo incluyendo cascadas de sombras, pase de belleza y cielo procedural.
-   */
   public renderFrame(
     drawCalls: SDrawCall[],
     activeCallCount: number,
@@ -415,10 +440,8 @@ export class SerionRHI {
       this.updatePassDescriptors();
     }
 
-    // Carga de datos a la GPU (Zero-GC)
     this.device.queue.writeBuffer(this.cameraBuffer!, 0, globalEnvData.buffer);
 
-    // BLINDAJE: Solo enviamos datos de instancias si realmente hay alguna que pintar
     if (fullInstanceData.byteLength > 0) {
       this.device.queue.writeBuffer(this.instanceBuffer!, 0, fullInstanceData.buffer, fullInstanceData.byteOffset, fullInstanceData.byteLength);
     }
@@ -431,28 +454,38 @@ export class SerionRHI {
 
     // 2. PASE DE BELLEZA (Beauty Pass HDR)
     const mainPass = encoder.beginRenderPass(this.mainPassDescriptor!);
-
-    // Objetos Opacos
     mainPass.setPipeline(this.renderPipeline);
     mainPass.setBindGroup(0, this.cameraBindGroup!);
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
 
-    // 3. PASE DE CIELO PROCEDURAL (Early-Z Rejection)
     if (this.skyPipeline) {
       mainPass.setPipeline(this.skyPipeline);
       mainPass.draw(4, 1, 0, 0);
     }
 
-    // 4. PASE DE REJILLA (Grid Overlay)
     if (this.gridPipeline) {
       mainPass.setPipeline(this.gridPipeline);
       mainPass.draw(6, 1, 0, 0);
     }
-
     mainPass.end();
 
-    // 5. PASE DE BLOOM (Extracción HDR @ 1/4 Res)
-    const bloomPass = encoder.beginRenderPass({
+    // 3. PASES DE BLOOM SEPARABLE
+    // Pase H: Extrae y Blur H -> Temp
+    const bloomPassH = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.bloomTempTextureView!,
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    bloomPassH.setPipeline(this.bloomPipelineH!);
+    bloomPassH.setBindGroup(0, this.bloomBindGroupH!);
+    bloomPassH.draw(4, 1, 0, 0);
+    bloomPassH.end();
+
+    // Pase V: Blur V sobre Temp -> Final Bloom
+    const bloomPassV = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.bloomTextureView!,
         loadOp: 'clear',
@@ -460,12 +493,12 @@ export class SerionRHI {
         storeOp: 'store'
       }]
     });
-    bloomPass.setPipeline(this.bloomPipeline!);
-    bloomPass.setBindGroup(0, this.bloomBindGroup!);
-    bloomPass.draw(4, 1, 0, 0);
-    bloomPass.end();
+    bloomPassV.setPipeline(this.bloomPipelineV!);
+    bloomPassV.setBindGroup(0, this.bloomBindGroupV!);
+    bloomPassV.draw(4, 1, 0, 0);
+    bloomPassV.end();
 
-    // 6. PASE DE POST-PROCESADO (Final Output a Pantalla)
+    // 4. PASE FINAL (Post-Process + Merge Bloom)
     const postProcessPass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),

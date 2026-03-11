@@ -23,30 +23,64 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 
+// ---------------------------------------------------------
+// PASE 1: EXTRACCIÓN FÍSICA Y BLUR HORIZONTAL (61 Taps)
+// ---------------------------------------------------------
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // Single-pass Extract & Blur (Cruz 5-muestras)
-    let offset = 1.0 / 512.0; 
-    let offsets = array<vec2<f32>, 5>(
-        vec2<f32>(0.0, 0.0),
-        vec2<f32>(offset, 0.0),
-        vec2<f32>(-offset, 0.0),
-        vec2<f32>(0.0, offset),
-        vec2<f32>(0.0, -offset)
-    );
+fn fs_extract_and_blur_h(input: VertexOutput) -> @location(0) vec4<f32> {
+    var result = vec3<f32>(0.0);
+    var totalWeight = 0.0;
+    
+    // Parámetros de difuminado masivo
+    let sigma = 12.0;
+    let radius: i32 = 30; // 61 iteraciones garantizadas por WebGPU
 
-    var color = vec3<f32>(0.0);
-    for (var i = 0; i < 5; i++) {
-        color += textureSample(sceneTexture, texSampler, input.uv + offsets[i]).rgb;
-    }
-    color /= 5.0;
+    for (var i: i32 = -radius; i <= radius; i = i + 1) {
+        let fi = f32(i);
+        let weight = exp(-(fi * fi) / (2.0 * sigma * sigma));
+        
+        // Multiplicador de expansión masiva (0.002 = alcance de hasta 6% de la pantalla)
+        let offset = vec2<f32>(fi * 0.002, 0.0);
+        let s = textureSample(sceneTexture, texSampler, input.uv + offset).rgb;
 
-    // Extracción de brillo (Threshold > 1.5)
-    let brightness = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
-    if (brightness > 1.5) {
-        // Devolver color con multiplicador de intensidad para atenuar aliasing
-        return vec4<f32>(color * 0.5, 1.0);
+        // EXTRACCIÓN FÍSICA (AAA Standard): En lugar de un corte brusco, sustraemos la energía base.
+        // Esto derrite los píxeles duros orgánicamente.
+        let brightness = max(s.r, max(s.g, s.b));
+        let contribution = max(0.0, brightness - 1.5) / max(brightness, 0.00001);
+        let brightPart = s * contribution;
+
+        result += brightPart * weight;
+        totalWeight += weight;
     }
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+
+    return vec4<f32>(result / totalWeight, 1.0);
+}
+
+// ---------------------------------------------------------
+// PASE 2: BLUR VERTICAL MASIVO (61 Taps)
+// ---------------------------------------------------------
+@fragment
+fn fs_blur_v(input: VertexOutput) -> @location(0) vec4<f32> {
+    var result = vec3<f32>(0.0);
+    var totalWeight = 0.0;
+    let sigma = 12.0;
+    let radius: i32 = 30;
+
+    for (var i: i32 = -radius; i <= radius; i = i + 1) {
+        let fi = f32(i);
+        let weight = exp(-(fi * fi) / (2.0 * sigma * sigma));
+        
+        // El offset en Y es un poco mayor para compensar el formato panorámico 16:9
+        let offset = vec2<f32>(0.0, fi * 0.0035); 
+
+        let s = textureSample(sceneTexture, texSampler, input.uv + offset).rgb;
+
+        result += s * weight;
+        totalWeight += weight;
+    }
+
+    // Devolvemos el resplandor multiplicado por un factor enorme 
+    // para asegurar que el halo ciegue la pantalla.
+    return vec4<f32>((result / totalWeight) * 2.0, 1.0);
 }
 `;
