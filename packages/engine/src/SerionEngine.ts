@@ -75,6 +75,15 @@ export class SerionEngine {
     d[0] /= mag; d[1] /= mag; d[2] /= mag;
 
     Logger.info('ENGINE', "Motor inicializado.");
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('serion:selection-changed', ((e: CustomEvent) => {
+        const selectedIds = new Set(e.detail.selectedIds as number[]);
+        for (const actor of this.activeWorld.getActors().values()) {
+          actor.isSelected = selectedIds.has(actor.id);
+        }
+      }) as EventListener);
+    }
   }
 
   public async start(canvas: HTMLCanvasElement): Promise<void> {
@@ -328,12 +337,18 @@ export class SerionEngine {
         // Matrix: Normal (Transpose Inverse 4x4)
         this.batchBuffer.set(this.transformPool.getNormalMatrix(actor.id), targetOffset + 16);
 
+        // 1.0 = Seleccionado, 0.0 = Normal
+        const selectionFlag = actor.isSelected ? 1.0 : 0.0;
+
         // PBR Data (BaseColor + Params)
         if (actor.material) {
           this.batchBuffer.set(actor.material.baseColor, targetOffset + 32);
           this.batchBuffer.set(actor.material.pbrParams, targetOffset + 36);
+          // SOBREESCRIBIR EL COMPONENTE 'W' (Padding) CON EL FLAG
+          this.batchBuffer[targetOffset + 39] = selectionFlag; 
         } else {
-          this.batchBuffer.set([1, 1, 1, 1, 0, 0.5, 0.5, 0], targetOffset + 32);
+          // Material por defecto con el flag en el último componente
+          this.batchBuffer.set([1, 1, 1, 1, 0, 0.5, 0.5, selectionFlag], targetOffset + 32);
         }
 
         // Incrementar offset para la siguiente instancia de esta misma malla
