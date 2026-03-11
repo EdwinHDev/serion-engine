@@ -28,31 +28,25 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(2) var bloomTexture: texture_2d<f32>;
 @group(0) @binding(3) var ssaoTexture: texture_2d<f32>;
 
-@fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let hdrColor = textureSample(sceneTexture, texSampler, input.uv).rgb;
     let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
     let ao = textureSample(ssaoTexture, texSampler, input.uv).r;
-    
-    // Suma aditiva del resplandor (Bloom)
-    // Extraer AO. Multiplica el color base por el AO *ANTES* de sumar el Bloom
-    // Nota: El usuario especificó (bloomColor * bloomIntensity) pero no proveyó bloomIntensity en el query
-    // Mantendremos una adición directa (o podemos poner un factor de 1.0)
-    let finalHdrColor = (hdrColor * ao) + bloomColor;
-    
-    // 1. ACES Filmic Tonemapping (Standard AAA)
-    // Comprime los valores HDR (>1.0) a un rango visible [0.0, 1.0]
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    let mappedColor = clamp((finalHdrColor * (a * finalHdrColor + b)) / (finalHdrColor * (c * finalHdrColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
-    
-    // 2. Corrección Gamma (1.0 / 2.2 = 0.4545)
-    // Para que los colores se vean correctos en monitores sRGB
-    let finalColor = pow(mappedColor, vec3<f32>(0.454545));
-    
-    return vec4<f32>(finalColor, 1.0);
+
+    // LUMA MASKING: Calcular la luminancia de la escena sin procesar
+    let luma = dot(hdrColor, vec3<f32>(0.2126, 0.7152, 0.0722));
+
+    // Si el píxel es intensamente brillante (ej. le pega el sol), la oclusión se desvanece a 1.0 (Sin Sombra)
+    let directLightProtection = smoothstep(0.05, 1.0, luma);
+    let physicalAO = mix(ao, 1.0, directLightProtection);
+
+    // Aplicar AO corregido antes del Bloom
+    let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 0.04);
+
+    // ACES Filmic
+    let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+    let mapped = clamp((finalHdrColor * (a * finalHdrColor + b)) / (finalHdrColor * (c * finalHdrColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+
+    return vec4<f32>(pow(mapped, vec3<f32>(0.454545)), 1.0);
 }
 `;
