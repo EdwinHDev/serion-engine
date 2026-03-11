@@ -27,11 +27,13 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(2) var bloomTexture: texture_2d<f32>;
 @group(0) @binding(3) var ssaoTexture: texture_2d<f32>;
+@group(0) @binding(4) var lensFlareTexture: texture_2d<f32>;
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let hdrColor = textureSample(sceneTexture, texSampler, input.uv).rgb;
     let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
     let ao = textureSample(ssaoTexture, texSampler, input.uv).r;
+    let lensFlareColor = textureSample(lensFlareTexture, texSampler, input.uv).rgb;
 
     // LUMA MASKING: Calcular la luminancia de la escena sin procesar
     let luma = dot(hdrColor, vec3<f32>(0.2126, 0.7152, 0.0722));
@@ -42,10 +44,13 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
     // Aplicar AO corregido antes del Bloom
     let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 0.04);
+    
+    // Lens Flares
+    let colorWithFlares = finalHdrColor + (lensFlareColor * 2.5);
 
     // ACES Filmic
     let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-    let mapped = clamp((finalHdrColor * (a * finalHdrColor + b)) / (finalHdrColor * (c * finalHdrColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+    let mapped = clamp((colorWithFlares * (a * colorWithFlares + b)) / (colorWithFlares * (c * colorWithFlares + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 
     return vec4<f32>(pow(mapped, vec3<f32>(0.454545)), 1.0);
 }

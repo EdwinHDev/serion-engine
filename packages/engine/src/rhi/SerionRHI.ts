@@ -6,6 +6,7 @@ import { PostProcessShaderWGSL } from './shaders/PostProcessShader.wgsl';
 import { BloomShaderWGSL } from './shaders/BloomShader.wgsl';
 import { SSAOShaderWGSL } from './shaders/SSAOShader.wgsl';
 import { SSAOBlurShaderWGSL } from './shaders/SSAOBlurShader.wgsl';
+import { LensFlareShaderWGSL } from './shaders/LensFlareShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -89,6 +90,13 @@ export class SerionRHI {
   private ssaoLayout: GPUBindGroupLayout | null = null;
   private ssaoBlurLayout: GPUBindGroupLayout | null = null;
 
+  // Lens Flare Resources
+  private lensFlareTexture: GPUTexture | null = null;
+  private lensFlareTextureView: GPUTextureView | null = null;
+  private lensFlarePipeline: GPURenderPipeline | null = null;
+  private lensFlareLayout: GPUBindGroupLayout | null = null;
+  private lensFlareBindGroup: GPUBindGroup | null = null;
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
 
@@ -134,7 +142,8 @@ export class SerionRHI {
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
@@ -159,11 +168,19 @@ export class SerionRHI {
       ]
     });
 
+    this.lensFlareLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
     const postProcessPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.postProcessLayout] });
     const bloomPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bloomLayout!] });
     const ssaoPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.ssaoLayout!] });
     const ssaoBlurPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.ssaoBlurLayout!] });
+    const lensFlarePipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.lensFlareLayout] });
 
     // 2. Layout Sombras (Cámara Sol)
     const shadowEnvLayout = this.device.createBindGroupLayout({
@@ -325,6 +342,15 @@ export class SerionRHI {
       primitive: { topology: 'triangle-strip' }
     });
 
+    // 6. Lens Flare Pipeline
+    const lensFlareShaderModule = this.device.createShaderModule({ code: LensFlareShaderWGSL });
+    this.lensFlarePipeline = this.device.createRenderPipeline({
+      layout: lensFlarePipelineLayout,
+      vertex: { module: lensFlareShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: lensFlareShaderModule, entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
     // Buffer Global de Entorno
     this.cameraBuffer = this.device.createBuffer({ size: 320, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.instanceBuffer = this.device.createBuffer({ size: maxEntities * 160, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -412,6 +438,15 @@ export class SerionRHI {
     });
     this.ssaoBlurTextureView = this.ssaoBlurTexture.createView();
 
+    // Textura Lens Flare (Mitad de resolución para ser suave y rendir mejor)
+    if (this.lensFlareTexture) this.lensFlareTexture.destroy();
+    this.lensFlareTexture = this.device!.createTexture({
+      size: [Math.max(1, Math.floor(width / 2)), Math.max(1, Math.floor(height / 2))],
+      format: 'rgba16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.lensFlareTextureView = this.lensFlareTexture.createView();
+
     // Bindings de SSAO (se recrean porque dependen de la textura de profundidad y ssaoTexture)
     this.ssaoBindGroup = this.device!.createBindGroup({
       layout: this.ssaoLayout!,
@@ -464,14 +499,24 @@ export class SerionRHI {
       ]
     });
 
-    // BindGroup del Post-Procesado (Usa el Mip 0 como resultado final acumulado)
+    // BindGroup Lens Flare (Lee de Mip 2 del Bloom como source)
+    this.lensFlareBindGroup = this.device!.createBindGroup({
+      layout: this.lensFlareLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.bloomMipViews[2] }
+      ]
+    });
+
+    // BindGroup del Post-Procesado (Usa el Mip 0 como resultado final acumulado, SSAO, y Flares)
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
         { binding: 1, resource: this.hdrTextureView },
         { binding: 2, resource: this.bloomMipViews[0] },
-        { binding: 3, resource: this.ssaoBlurTextureView! }
+        { binding: 3, resource: this.ssaoBlurTextureView! },
+        { binding: 4, resource: this.lensFlareTextureView! }
       ]
     });
   }
@@ -651,7 +696,21 @@ export class SerionRHI {
       upPass.end();
     }
 
-    // 4. PASE FINAL (Post-Process + Merge Bloom Mip 0)
+    // 3.5 LENS FLARE PASS
+    const lensPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.lensFlareTextureView!,
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    lensPass.setPipeline(this.lensFlarePipeline!);
+    lensPass.setBindGroup(0, this.lensFlareBindGroup!);
+    lensPass.draw(4, 1, 0, 0);
+    lensPass.end();
+
+    // 4. PASE FINAL (Post-Process + Merge Bloom + Merge Lens Flares)
     const postProcessPass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
