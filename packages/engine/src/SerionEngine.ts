@@ -158,12 +158,21 @@ export class SerionEngine {
           const fps = Math.round((this.telemetryFrames * 1000) / (currentTime - this.lastTelemetryTime));
           const ms = (currentTime - this.lastTelemetryTime) / this.telemetryFrames;
 
+          let ramUsage = "N/A";
+          // Chequeo seguro para navegadores Chromium-based
+          if ('memory' in performance) {
+            const mem = (performance as any).memory;
+            // Convertir bytes a Megabytes (MB)
+            ramUsage = (mem.usedJSHeapSize / (1024 * 1024)).toFixed(1) + " MB";
+          }
+
           window.dispatchEvent(new CustomEvent('serion:telemetry', {
             detail: {
               fps: fps,
               ms: ms.toFixed(1),
               visibleActors: this.visibleActorCount,
-              totalActors: this.activeWorld.getActors().size
+              totalActors: this.activeWorld.getActors().size,
+              ram: ramUsage // Nueva métrica
             }
           }));
 

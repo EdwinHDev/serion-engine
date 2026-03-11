@@ -24,8 +24,9 @@ export class SerionStatusBar extends HTMLElement {
     if (!this.metricsElement) return;
     const detail = (e as CustomEvent).detail;
     if (!detail) return;
-    const { fps, ms, visibleActors, totalActors } = detail;
-    this.metricsElement.textContent = `FPS: ${fps} | ${ms} ms | Vis: ${visibleActors}/${totalActors}`;
+    const { fps, ms, visibleActors, totalActors, ram } = detail;
+    const ramText = ram && ram !== "N/A" ? ` | RAM: ${ram}` : "";
+    this.metricsElement.textContent = `FPS: ${fps} | ${ms} ms${ramText} | Vis: ${visibleActors}/${totalActors}`;
   };
 
   private render() {
