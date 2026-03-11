@@ -15,7 +15,7 @@ export interface SDrawCall {
 
 /**
  * Serion Engine - Rendering Hardware Interface (RHI)
- * Capa 13.12: AAA Separable Gaussian Bloom (Dos Pases).
+ * Capa 13.13: AAA Dual-Filter Bloom Pyramid (Kawase).
  */
 export class SerionRHI {
   private adapter: GPUAdapter | null = null;
@@ -60,17 +60,17 @@ export class SerionRHI {
   private postProcessLayout: GPUBindGroupLayout | null = null;
   private linearSampler: GPUSampler | null = null;
 
-  // Bloom Resources (Separable Gaussian)
-  private bloomTexture: GPUTexture | null = null;
-  private bloomTextureView: GPUTextureView | null = null;
-  private bloomTempTexture: GPUTexture | null = null;
-  private bloomTempTextureView: GPUTextureView | null = null;
-  
-  private bloomPipelineH: GPURenderPipeline | null = null;
-  private bloomPipelineV: GPURenderPipeline | null = null;
-  private bloomBindGroupH: GPUBindGroup | null = null;
-  private bloomBindGroupV: GPUBindGroup | null = null;
+  // AAA Bloom Pyramid (Kawase)
+  private bloomMipTextures: GPUTexture[] = [];
+  private bloomMipViews: GPUTextureView[] = [];
+  private bloomBindGroups: GPUBindGroup[] = [];
   private bloomLayout: GPUBindGroupLayout | null = null;
+  
+  private extractPipeline: GPURenderPipeline | null = null;
+  private downsamplePipeline: GPURenderPipeline | null = null;
+  private upsamplePipeline: GPURenderPipeline | null = null;
+
+  private extractBindGroup: GPUBindGroup | null = null;
 
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
@@ -240,20 +240,37 @@ export class SerionRHI {
       primitive: { topology: 'triangle-strip' }
     });
 
-    // 4. Bloom Pipelines (Separable)
+    // 4. Bloom Pipelines (Kawase Pyramid)
     const bloomShaderModule = this.device.createShaderModule({ code: BloomShaderWGSL });
     
-    this.bloomPipelineH = this.device.createRenderPipeline({
+    this.extractPipeline = this.device.createRenderPipeline({
       layout: bloomPipelineLayout,
       vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
-      fragment: { module: bloomShaderModule, entryPoint: 'fs_extract_and_blur_h', targets: [{ format: 'rgba16float' }] },
+      fragment: { module: bloomShaderModule, entryPoint: 'fs_extract', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-strip' }
     });
 
-    this.bloomPipelineV = this.device.createRenderPipeline({
+    this.downsamplePipeline = this.device.createRenderPipeline({
       layout: bloomPipelineLayout,
       vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
-      fragment: { module: bloomShaderModule, entryPoint: 'fs_blur_v', targets: [{ format: 'rgba16float' }] },
+      fragment: { module: bloomShaderModule, entryPoint: 'fs_downsample', targets: [{ format: 'rgba16float' }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
+    this.upsamplePipeline = this.device.createRenderPipeline({
+      layout: bloomPipelineLayout,
+      vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
+      fragment: { 
+        module: bloomShaderModule, 
+        entryPoint: 'fs_upsample', 
+        targets: [{ 
+          format: 'rgba16float',
+          blend: {
+            color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }
+          }
+        }] 
+      },
       primitive: { topology: 'triangle-strip' }
     });
 
@@ -320,50 +337,54 @@ export class SerionRHI {
     });
     this.hdrTextureView = this.hdrTexture.createView();
 
-    // Texturas Bloom (1/4 Resolución)
-    const bloomW = Math.max(1, Math.floor(width / 4));
-    const bloomH = Math.max(1, Math.floor(height / 4));
+    // Limpiar Mips Antiguos
+    this.bloomMipTextures.forEach(t => t.destroy());
+    this.bloomMipTextures = [];
+    this.bloomMipViews = [];
+    this.bloomBindGroups = [];
 
-    if (this.bloomTempTexture) this.bloomTempTexture.destroy();
-    this.bloomTempTexture = this.device!.createTexture({
-      size: [bloomW, bloomH],
-      format: 'rgba16float',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    // Crear Pirámide de Bloom (5 Niveles)
+    let mipW = width;
+    let mipH = height;
+
+    for (let i = 0; i < 5; i++) {
+        mipW = Math.max(1, Math.floor(mipW / 2));
+        mipH = Math.max(1, Math.floor(mipH / 2));
+
+        const tex = this.device!.createTexture({
+            size: [mipW, mipH],
+            format: 'rgba16float',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+        });
+        const view = tex.createView();
+
+        this.bloomMipTextures.push(tex);
+        this.bloomMipViews.push(view);
+        this.bloomBindGroups.push(this.device!.createBindGroup({
+            layout: this.bloomLayout!,
+            entries: [
+                { binding: 0, resource: this.linearSampler! },
+                { binding: 1, resource: view }
+            ]
+        }));
+    }
+
+    // BindGroup de Extracción (Lee del HDR original)
+    this.extractBindGroup = this.device!.createBindGroup({
+        layout: this.bloomLayout!,
+        entries: [
+            { binding: 0, resource: this.linearSampler! },
+            { binding: 1, resource: this.hdrTextureView }
+        ]
     });
-    this.bloomTempTextureView = this.bloomTempTexture.createView();
 
-    if (this.bloomTexture) this.bloomTexture.destroy();
-    this.bloomTexture = this.device!.createTexture({
-      size: [bloomW, bloomH],
-      format: 'rgba16float',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-    });
-    this.bloomTextureView = this.bloomTexture.createView();
-
-    // BindGroups Bloom
-    this.bloomBindGroupH = this.device!.createBindGroup({
-      layout: this.bloomLayout!,
-      entries: [
-        { binding: 0, resource: this.linearSampler! },
-        { binding: 1, resource: this.hdrTextureView } // H lee del HDR original (Extrae y Blur H)
-      ]
-    });
-
-    this.bloomBindGroupV = this.device!.createBindGroup({
-      layout: this.bloomLayout!,
-      entries: [
-        { binding: 0, resource: this.linearSampler! },
-        { binding: 1, resource: this.bloomTempTextureView } // V lee del Temp (Blur V)
-      ]
-    });
-
-    // BindGroup Post-Procesado
+    // BindGroup del Post-Procesado (Usa el Mip 0 como resultado final acumulado)
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
         { binding: 1, resource: this.hdrTextureView },
-        { binding: 2, resource: this.bloomTextureView } // Lee del resultado final de Bloom V
+        { binding: 2, resource: this.bloomMipViews[0] }
       ]
     });
   }
@@ -469,36 +490,54 @@ export class SerionRHI {
     }
     mainPass.end();
 
-    // 3. PASES DE BLOOM SEPARABLE
-    // Pase H: Extrae y Blur H -> Temp
-    const bloomPassH = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.bloomTempTextureView!,
-        loadOp: 'clear',
-        clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        storeOp: 'store'
-      }]
-    });
-    bloomPassH.setPipeline(this.bloomPipelineH!);
-    bloomPassH.setBindGroup(0, this.bloomBindGroupH!);
-    bloomPassH.draw(4, 1, 0, 0);
-    bloomPassH.end();
+    // 3. BLOOM PYRAMID (Kawase)
 
-    // Pase V: Blur V sobre Temp -> Final Bloom
-    const bloomPassV = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.bloomTextureView!,
-        loadOp: 'clear',
-        clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        storeOp: 'store'
-      }]
+    // A. Extracción suave (HDR Scena -> Bloom Mip 0)
+    const extractPass = encoder.beginRenderPass({
+        colorAttachments: [{
+            view: this.bloomMipViews[0],
+            loadOp: 'clear',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            storeOp: 'store'
+        }]
     });
-    bloomPassV.setPipeline(this.bloomPipelineV!);
-    bloomPassV.setBindGroup(0, this.bloomBindGroupV!);
-    bloomPassV.draw(4, 1, 0, 0);
-    bloomPassV.end();
+    extractPass.setPipeline(this.extractPipeline!);
+    extractPass.setBindGroup(0, this.extractBindGroup!);
+    extractPass.draw(4, 1, 0, 0);
+    extractPass.end();
 
-    // 4. PASE FINAL (Post-Process + Merge Bloom)
+    // B. Downsample Loop (Iterativo Mip i -> Mip i+1)
+    for (let i = 0; i < 4; i++) {
+        const downPass = encoder.beginRenderPass({
+            colorAttachments: [{
+                view: this.bloomMipViews[i + 1],
+                loadOp: 'clear',
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                storeOp: 'store'
+            }]
+        });
+        downPass.setPipeline(this.downsamplePipeline!);
+        downPass.setBindGroup(0, this.bloomBindGroups[i]);
+        downPass.draw(4, 1, 0, 0);
+        downPass.end();
+    }
+
+    // C. Upsample Loop (Iterativo Mip i -> Mip i-1 con Adición)
+    for (let i = 4; i > 0; i--) {
+        const upPass = encoder.beginRenderPass({
+            colorAttachments: [{
+                view: this.bloomMipViews[i - 1],
+                loadOp: 'load', // ¡IMPORTANTE! Sumar al contenido existente
+                storeOp: 'store'
+            }]
+        });
+        upPass.setPipeline(this.upsamplePipeline!);
+        upPass.setBindGroup(0, this.bloomBindGroups[i]);
+        upPass.draw(4, 1, 0, 0);
+        upPass.end();
+    }
+
+    // 4. PASE FINAL (Post-Process + Merge Bloom Mip 0)
     const postProcessPass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
