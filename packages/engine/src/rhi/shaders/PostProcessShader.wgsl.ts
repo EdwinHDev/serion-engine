@@ -46,7 +46,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 0.04);
     
     // Lens Flares
-    let colorWithFlares = finalHdrColor + (lensFlareColor * 2.5);
+    let colorWithFlares = finalHdrColor + (lensFlareColor * 0.5);
 
     // ACES Filmic
     let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
