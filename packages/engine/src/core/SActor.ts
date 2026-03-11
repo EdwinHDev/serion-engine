@@ -17,6 +17,7 @@ export class SActor {
   public readonly worldAABB = new AABB();
   public name: string = 'Actor';
   public parentId: number | null = null;
+  public isSelected: boolean = false;
 
   constructor(
     public readonly id: number,

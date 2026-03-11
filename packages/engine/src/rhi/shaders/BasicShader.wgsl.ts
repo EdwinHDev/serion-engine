@@ -198,4 +198,13 @@ fn shadow_vs_main_c1(input: VertexInput) -> @builtin(position) vec4<f32> {
     
     return env.lightViewProj1 * vec4<f32>(biasedWorldPos, 1.0);
 }
+
+@fragment
+fn fs_selection(input: VertexOutput) -> @location(0) vec4<f32> {
+    // El canal W de pbrParams es nuestro flag de selección (1.0 = Seleccionado)
+    if (input.pbrParams.w < 0.5) {
+        discard;
+    }
+    return vec4<f32>(1.0, 0.0, 0.0, 0.0); // Máscara sólida pura
+}
 `;

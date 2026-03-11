@@ -97,6 +97,11 @@ export class SerionRHI {
   private lensFlareLayout: GPUBindGroupLayout | null = null;
   private lensFlareBindGroup: GPUBindGroup | null = null;
 
+  // Selection Outline Resources
+  private selectionTexture: GPUTexture | null = null;
+  private selectionTextureView: GPUTextureView | null = null;
+  private selectionPipeline: GPURenderPipeline | null = null;
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
 
@@ -143,7 +148,8 @@ export class SerionRHI {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
@@ -224,6 +230,15 @@ export class SerionRHI {
       fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
+    });
+
+    // Selection Pipeline (X-Ray)
+    this.selectionPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      fragment: { module: shaderModule, entryPoint: 'fs_selection', targets: [{ format: 'r8unorm' }] },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth24plus' }
     });
 
     // Shadow Pipelines 
@@ -447,6 +462,15 @@ export class SerionRHI {
     });
     this.lensFlareTextureView = this.lensFlareTexture.createView();
 
+    // Textura Selection
+    if (this.selectionTexture) this.selectionTexture.destroy();
+    this.selectionTexture = this.device!.createTexture({
+      size: [width, height],
+      format: 'r8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.selectionTextureView = this.selectionTexture.createView();
+
     // Bindings de SSAO (se recrean porque dependen de la textura de profundidad y ssaoTexture)
     this.ssaoBindGroup = this.device!.createBindGroup({
       layout: this.ssaoLayout!,
@@ -516,7 +540,8 @@ export class SerionRHI {
         { binding: 1, resource: this.hdrTextureView },
         { binding: 2, resource: this.bloomMipViews[0] },
         { binding: 3, resource: this.ssaoBlurTextureView! },
-        { binding: 4, resource: this.lensFlareTextureView! }
+        { binding: 4, resource: this.lensFlareTextureView! },
+        { binding: 5, resource: this.selectionTextureView! }
       ]
     });
   }
@@ -621,6 +646,21 @@ export class SerionRHI {
       mainPass.draw(6, 1, 0, 0);
     }
     mainPass.end();
+
+    // 2.2. SELECTION PASS (Mascaras transparentes a través de paredes)
+    const selectionPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.selectionTextureView!,
+        loadOp: 'clear', clearValue: { r: 0, g: 0, b: 0, a: 0 }, storeOp: 'store'
+      }],
+      depthStencilAttachment: {
+        view: this.depthTextureView!, depthLoadOp: 'load', depthStoreOp: 'store'
+      }
+    });
+    selectionPass.setPipeline(this.selectionPipeline!);
+    selectionPass.setBindGroup(0, this.cameraBindGroup!);
+    this.recordDrawCalls(selectionPass, drawCalls, activeCallCount);
+    selectionPass.end();
 
     // 2.5. SSAO y SSAO Blur Passes
     const ssaoPass = encoder.beginRenderPass({
