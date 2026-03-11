@@ -42,8 +42,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let directLightProtection = smoothstep(0.05, 1.0, luma);
     let physicalAO = mix(ao, 1.0, directLightProtection);
 
-    // Aplicar AO corregido antes del Bloom
-    let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 0.04);
+    // Aplicar AO corregido antes del Bloom (Abrimos el sangrado al 120%)
+    let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 1.2);
     
     // Lens Flares
     let colorWithFlares = finalHdrColor + (lensFlareColor * 0.5);

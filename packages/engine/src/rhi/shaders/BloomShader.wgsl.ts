@@ -27,10 +27,15 @@ fn fs_extract(input: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(sceneTexture, texSampler, input.uv).rgb;
     let brightness = max(color.r, max(color.g, color.b));
     
-    // Subimos el umbral a 2.0 para garantizar que el cielo azul jamás genere bloom,
-    // aislando únicamente la luz pura del disco solar.
-    let threshold = 2.0;
-    let contribution = max(0.0, brightness - threshold) / max(brightness, 0.00001);
+    let threshold = 1.0; 
+    let knee = 1.0; 
+    
+    // Fórmula de curva de rodilla suave para capturar la atmósfera sutilmente
+    let rq = clamp(brightness - threshold + knee, 0.0, knee * 2.0);
+    let curve = (rq * rq) / (4.0 * knee + 0.0001);
+    
+    let contribution = max(brightness - threshold, curve) / max(brightness, 0.00001);
+    
     return vec4<f32>(color * contribution, 1.0);
 }
 
