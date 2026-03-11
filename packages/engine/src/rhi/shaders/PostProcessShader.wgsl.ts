@@ -26,16 +26,22 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(2) var bloomTexture: texture_2d<f32>;
+@group(0) @binding(3) var ssaoTexture: texture_2d<f32>;
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let hdrColor = textureSample(sceneTexture, texSampler, input.uv).rgb;
     let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
+    let ao = textureSample(ssaoTexture, texSampler, input.uv).r;
     
-    // Suma aditiva: Aumentamos el multiplicador del Bloom para exagerar el Lens Flare
-    let finalHdrColor = hdrColor + (bloomColor * 1.5);
+    // Suma aditiva del resplandor (Bloom)
+    // Extraer AO. Multiplica el color base por el AO *ANTES* de sumar el Bloom
+    // Nota: El usuario especificó (bloomColor * bloomIntensity) pero no proveyó bloomIntensity en el query
+    // Mantendremos una adición directa (o podemos poner un factor de 1.0)
+    let finalHdrColor = (hdrColor * ao) + bloomColor;
     
-    // 1. ACES Filmic Tonemapping
+    // 1. ACES Filmic Tonemapping (Standard AAA)
+    // Comprime los valores HDR (>1.0) a un rango visible [0.0, 1.0]
     let a = 2.51;
     let b = 0.03;
     let c = 2.43;
@@ -44,6 +50,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let mappedColor = clamp((finalHdrColor * (a * finalHdrColor + b)) / (finalHdrColor * (c * finalHdrColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
     
     // 2. Corrección Gamma (1.0 / 2.2 = 0.4545)
+    // Para que los colores se vean correctos en monitores sRGB
     let finalColor = pow(mappedColor, vec3<f32>(0.454545));
     
     return vec4<f32>(finalColor, 1.0);

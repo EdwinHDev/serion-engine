@@ -4,6 +4,8 @@ import { GridShaderWGSL } from './shaders/GridShader.wgsl';
 import { SkyShaderWGSL } from './shaders/SkyShader.wgsl';
 import { PostProcessShaderWGSL } from './shaders/PostProcessShader.wgsl';
 import { BloomShaderWGSL } from './shaders/BloomShader.wgsl';
+import { SSAOShaderWGSL } from './shaders/SSAOShader.wgsl';
+import { SSAOBlurShaderWGSL } from './shaders/SSAOBlurShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -65,12 +67,27 @@ export class SerionRHI {
   private bloomMipViews: GPUTextureView[] = [];
   private bloomBindGroups: GPUBindGroup[] = [];
   private bloomLayout: GPUBindGroupLayout | null = null;
-  
+
   private extractPipeline: GPURenderPipeline | null = null;
   private downsamplePipeline: GPURenderPipeline | null = null;
   private upsamplePipeline: GPURenderPipeline | null = null;
 
   private extractBindGroup: GPUBindGroup | null = null;
+
+  // SSAO Resources
+  private ssaoTexture: GPUTexture | null = null;
+  private ssaoTextureView: GPUTextureView | null = null;
+  private ssaoBlurTexture: GPUTexture | null = null;
+  private ssaoBlurTextureView: GPUTextureView | null = null;
+
+  private ssaoPipeline: GPURenderPipeline | null = null;
+  private ssaoBlurPipeline: GPURenderPipeline | null = null;
+
+  private ssaoBindGroup: GPUBindGroup | null = null;
+  private ssaoBlurBindGroup: GPUBindGroup | null = null;
+
+  private ssaoLayout: GPUBindGroupLayout | null = null;
+  private ssaoBlurLayout: GPUBindGroupLayout | null = null;
 
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
@@ -116,7 +133,8 @@ export class SerionRHI {
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
@@ -127,9 +145,25 @@ export class SerionRHI {
       ]
     });
 
+    this.ssaoLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } }
+      ]
+    });
+
+    this.ssaoBlurLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } }
+      ]
+    });
+
     const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [envLayout] });
     const postProcessPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.postProcessLayout] });
     const bloomPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.bloomLayout!] });
+    const ssaoPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.ssaoLayout!] });
+    const ssaoBlurPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.ssaoBlurLayout!] });
 
     // 2. Layout Sombras (Cámara Sol)
     const shadowEnvLayout = this.device.createBindGroupLayout({
@@ -242,7 +276,7 @@ export class SerionRHI {
 
     // 4. Bloom Pipelines (Kawase Pyramid)
     const bloomShaderModule = this.device.createShaderModule({ code: BloomShaderWGSL });
-    
+
     this.extractPipeline = this.device.createRenderPipeline({
       layout: bloomPipelineLayout,
       vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
@@ -260,17 +294,34 @@ export class SerionRHI {
     this.upsamplePipeline = this.device.createRenderPipeline({
       layout: bloomPipelineLayout,
       vertex: { module: bloomShaderModule, entryPoint: 'vs_main' },
-      fragment: { 
-        module: bloomShaderModule, 
-        entryPoint: 'fs_upsample', 
-        targets: [{ 
+      fragment: {
+        module: bloomShaderModule,
+        entryPoint: 'fs_upsample',
+        targets: [{
           format: 'rgba16float',
           blend: {
             color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }
           }
-        }] 
+        }]
       },
+      primitive: { topology: 'triangle-strip' }
+    });
+
+    // 5. SSAO Pipelines
+    const ssaoShaderModule = this.device.createShaderModule({ code: SSAOShaderWGSL });
+    this.ssaoPipeline = this.device.createRenderPipeline({
+      layout: ssaoPipelineLayout,
+      vertex: { module: ssaoShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: ssaoShaderModule, entryPoint: 'fs_main', targets: [{ format: 'r16float' }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
+    const ssaoBlurShaderModule = this.device.createShaderModule({ code: SSAOBlurShaderWGSL });
+    this.ssaoBlurPipeline = this.device.createRenderPipeline({
+      layout: ssaoBlurPipelineLayout,
+      vertex: { module: ssaoBlurShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: ssaoBlurShaderModule, entryPoint: 'fs_main', targets: [{ format: 'r16float' }] },
       primitive: { topology: 'triangle-strip' }
     });
 
@@ -325,7 +376,7 @@ export class SerionRHI {
     this.depthTexture = this.device!.createTexture({
       size: [width, height],
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
     this.depthTextureView = this.depthTexture.createView();
 
@@ -343,39 +394,74 @@ export class SerionRHI {
     this.bloomMipViews = [];
     this.bloomBindGroups = [];
 
+    if (this.ssaoTexture) this.ssaoTexture.destroy();
+    if (this.ssaoBlurTexture) this.ssaoBlurTexture.destroy();
+
+    // Texturas SSAO
+    this.ssaoTexture = this.device!.createTexture({
+      size: [width, height],
+      format: 'r16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.ssaoTextureView = this.ssaoTexture.createView();
+
+    this.ssaoBlurTexture = this.device!.createTexture({
+      size: [width, height],
+      format: 'r16float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.ssaoBlurTextureView = this.ssaoBlurTexture.createView();
+
+    // Bindings de SSAO (se recrean porque dependen de la textura de profundidad y ssaoTexture)
+    this.ssaoBindGroup = this.device!.createBindGroup({
+      layout: this.ssaoLayout!,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer! } },
+        { binding: 1, resource: this.depthTextureView! }
+      ]
+    });
+
+    this.ssaoBlurBindGroup = this.device!.createBindGroup({
+      layout: this.ssaoBlurLayout!,
+      entries: [
+        { binding: 0, resource: this.ssaoTextureView! },
+        { binding: 1, resource: this.depthTextureView! }
+      ]
+    });
+
     // Crear Pirámide de Bloom (5 Niveles)
     let mipW = width;
     let mipH = height;
 
     for (let i = 0; i < 5; i++) {
-        mipW = Math.max(1, Math.floor(mipW / 2));
-        mipH = Math.max(1, Math.floor(mipH / 2));
+      mipW = Math.max(1, Math.floor(mipW / 2));
+      mipH = Math.max(1, Math.floor(mipH / 2));
 
-        const tex = this.device!.createTexture({
-            size: [mipW, mipH],
-            format: 'rgba16float',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-        });
-        const view = tex.createView();
+      const tex = this.device!.createTexture({
+        size: [mipW, mipH],
+        format: 'rgba16float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+      });
+      const view = tex.createView();
 
-        this.bloomMipTextures.push(tex);
-        this.bloomMipViews.push(view);
-        this.bloomBindGroups.push(this.device!.createBindGroup({
-            layout: this.bloomLayout!,
-            entries: [
-                { binding: 0, resource: this.linearSampler! },
-                { binding: 1, resource: view }
-            ]
-        }));
+      this.bloomMipTextures.push(tex);
+      this.bloomMipViews.push(view);
+      this.bloomBindGroups.push(this.device!.createBindGroup({
+        layout: this.bloomLayout!,
+        entries: [
+          { binding: 0, resource: this.linearSampler! },
+          { binding: 1, resource: view }
+        ]
+      }));
     }
 
     // BindGroup de Extracción (Lee del HDR original)
     this.extractBindGroup = this.device!.createBindGroup({
-        layout: this.bloomLayout!,
-        entries: [
-            { binding: 0, resource: this.linearSampler! },
-            { binding: 1, resource: this.hdrTextureView }
-        ]
+      layout: this.bloomLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.hdrTextureView }
+      ]
     });
 
     // BindGroup del Post-Procesado (Usa el Mip 0 como resultado final acumulado)
@@ -384,7 +470,8 @@ export class SerionRHI {
       entries: [
         { binding: 0, resource: this.linearSampler! },
         { binding: 1, resource: this.hdrTextureView },
-        { binding: 2, resource: this.bloomMipViews[0] }
+        { binding: 2, resource: this.bloomMipViews[0] },
+        { binding: 3, resource: this.ssaoBlurTextureView! }
       ]
     });
   }
@@ -490,16 +577,43 @@ export class SerionRHI {
     }
     mainPass.end();
 
+    // 2.5. SSAO y SSAO Blur Passes
+    const ssaoPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.ssaoTextureView!,
+        loadOp: 'clear',
+        clearValue: { r: 1, g: 1, b: 1, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    ssaoPass.setPipeline(this.ssaoPipeline!);
+    ssaoPass.setBindGroup(0, this.ssaoBindGroup!);
+    ssaoPass.draw(4, 1, 0, 0);
+    ssaoPass.end();
+
+    const ssaoBlurPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.ssaoBlurTextureView!,
+        loadOp: 'clear',
+        clearValue: { r: 1, g: 1, b: 1, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    ssaoBlurPass.setPipeline(this.ssaoBlurPipeline!);
+    ssaoBlurPass.setBindGroup(0, this.ssaoBlurBindGroup!);
+    ssaoBlurPass.draw(4, 1, 0, 0);
+    ssaoBlurPass.end();
+
     // 3. BLOOM PYRAMID (Kawase)
 
     // A. Extracción suave (HDR Scena -> Bloom Mip 0)
     const extractPass = encoder.beginRenderPass({
-        colorAttachments: [{
-            view: this.bloomMipViews[0],
-            loadOp: 'clear',
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            storeOp: 'store'
-        }]
+      colorAttachments: [{
+        view: this.bloomMipViews[0],
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
     });
     extractPass.setPipeline(this.extractPipeline!);
     extractPass.setBindGroup(0, this.extractBindGroup!);
@@ -508,33 +622,33 @@ export class SerionRHI {
 
     // B. Downsample Loop (Iterativo Mip i -> Mip i+1)
     for (let i = 0; i < 4; i++) {
-        const downPass = encoder.beginRenderPass({
-            colorAttachments: [{
-                view: this.bloomMipViews[i + 1],
-                loadOp: 'clear',
-                clearValue: { r: 0, g: 0, b: 0, a: 1 },
-                storeOp: 'store'
-            }]
-        });
-        downPass.setPipeline(this.downsamplePipeline!);
-        downPass.setBindGroup(0, this.bloomBindGroups[i]);
-        downPass.draw(4, 1, 0, 0);
-        downPass.end();
+      const downPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.bloomMipViews[i + 1],
+          loadOp: 'clear',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          storeOp: 'store'
+        }]
+      });
+      downPass.setPipeline(this.downsamplePipeline!);
+      downPass.setBindGroup(0, this.bloomBindGroups[i]);
+      downPass.draw(4, 1, 0, 0);
+      downPass.end();
     }
 
     // C. Upsample Loop (Iterativo Mip i -> Mip i-1 con Adición)
     for (let i = 4; i > 0; i--) {
-        const upPass = encoder.beginRenderPass({
-            colorAttachments: [{
-                view: this.bloomMipViews[i - 1],
-                loadOp: 'load', // ¡IMPORTANTE! Sumar al contenido existente
-                storeOp: 'store'
-            }]
-        });
-        upPass.setPipeline(this.upsamplePipeline!);
-        upPass.setBindGroup(0, this.bloomBindGroups[i]);
-        upPass.draw(4, 1, 0, 0);
-        upPass.end();
+      const upPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.bloomMipViews[i - 1],
+          loadOp: 'load', // ¡IMPORTANTE! Sumar al contenido existente
+          storeOp: 'store'
+        }]
+      });
+      upPass.setPipeline(this.upsamplePipeline!);
+      upPass.setBindGroup(0, this.bloomBindGroups[i]);
+      upPass.draw(4, 1, 0, 0);
+      upPass.end();
     }
 
     // 4. PASE FINAL (Post-Process + Merge Bloom Mip 0)
