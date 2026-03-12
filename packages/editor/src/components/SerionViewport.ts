@@ -1,4 +1,5 @@
 import { SerionEngine, InputManager } from '@serion/engine';
+import { EditorState } from '../core/EditorState';
 
 /**
  * SerionViewport Component
@@ -40,8 +41,12 @@ export class SerionViewport extends HTMLElement {
     // Desactivar menú contextual para permitir uso del Click Derecho
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    let isDragging = false;
+    this.canvas.addEventListener('mousemove', () => { isDragging = true; });
+
     // Gestión de Pointer Lock estilo Editor (Sólo al mantener Click Derecho)
     this.canvas.addEventListener('mousedown', (e) => {
+      isDragging = false;
       if (e.button === 2) { // Right Click
         this.canvas?.requestPointerLock();
       }
@@ -50,6 +55,21 @@ export class SerionViewport extends HTMLElement {
     this.canvas.addEventListener('mouseup', (e) => {
       if (e.button === 2) {
         document.exitPointerLock();
+      } else if (e.button === 0 && !isDragging) {
+        // Clic Izquierdo - Mouse Picking API WebGPU
+        const rect = this.canvas!.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const ndcX = (x / rect.width) * 2 - 1;
+        const ndcY = -(y / rect.height) * 2 + 1; // Y invertido para WebGPU
+
+        const hitId = this.engine.pickActor(ndcX, ndcY);
+        if (hitId !== null) {
+          EditorState.selectActor(hitId, e.ctrlKey || e.metaKey);
+        } else {
+          EditorState.clearSelection();
+        }
       }
     });
   }

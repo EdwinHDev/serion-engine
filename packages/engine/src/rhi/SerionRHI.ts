@@ -7,6 +7,7 @@ import { BloomShaderWGSL } from './shaders/BloomShader.wgsl';
 import { SSAOShaderWGSL } from './shaders/SSAOShader.wgsl';
 import { SSAOBlurShaderWGSL } from './shaders/SSAOBlurShader.wgsl';
 import { LensFlareShaderWGSL } from './shaders/LensFlareShader.wgsl';
+import { GizmoShaderWGSL } from './shaders/GizmoShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -102,6 +103,10 @@ export class SerionRHI {
   private selectionTextureView: GPUTextureView | null = null;
   private selectionPipeline: GPURenderPipeline | null = null;
 
+  // Gizmo Resources
+  private gizmoPipeline: GPURenderPipeline | null = null;
+  private gizmoLayout: GPUBindGroupLayout | null = null;
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
     this.canvas = canvas;
 
@@ -178,6 +183,12 @@ export class SerionRHI {
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+
+    this.gizmoLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }
       ]
     });
 
@@ -364,6 +375,29 @@ export class SerionRHI {
       vertex: { module: lensFlareShaderModule, entryPoint: 'vs_main' },
       fragment: { module: lensFlareShaderModule, entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-strip' }
+    });
+
+    // 7. Gizmo Pipeline
+    this.gizmoPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [envLayout, this.gizmoLayout!] }),
+      vertex: {
+        module: this.device.createShaderModule({ code: GizmoShaderWGSL }),
+        entryPoint: 'vs_main',
+        buffers: [{
+          arrayStride: 24, // posX, posY, posZ, colR, colG, colB (6 floats)
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' }
+          ]
+        }]
+      },
+      fragment: {
+        module: this.device.createShaderModule({ code: GizmoShaderWGSL }),
+        entryPoint: 'fs_main',
+        targets: [{ format: 'rgba16float' }]
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
     });
 
     // Buffer Global de Entorno
@@ -767,6 +801,34 @@ export class SerionRHI {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  public renderGizmos(gizmoSystem: any): void {
+    if (!this.device || !this.gizmoPipeline) return;
+
+    const encoder = this.device.createCommandEncoder();
+
+    // Pase de Gizmos - Superposición (Limpia Z a 1.0 para dibujar encima de todo)
+    const gizmoPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.hdrTextureView!,
+        loadOp: 'load',
+        storeOp: 'store'
+      }],
+      depthStencilAttachment: {
+        view: this.depthTextureView!,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store'
+      }
+    });
+
+    gizmoPass.setPipeline(this.gizmoPipeline);
+    gizmoPass.setBindGroup(0, this.cameraBindGroup!); // Environment
+    gizmoSystem.draw(gizmoPass);
+    gizmoPass.end();
+
+    this.device.queue.submit([encoder.finish()]);
+  }
+
   private recordDrawCalls(pass: GPURenderPassEncoder, drawCalls: SDrawCall[], count: number): void {
     for (let i = 0; i < count; i++) {
       const call = drawCalls[i];
@@ -782,4 +844,5 @@ export class SerionRHI {
   }
 
   public getDevice(): GPUDevice { return this.device!; }
+  public getGizmoLayout(): GPUBindGroupLayout { return this.gizmoLayout!; }
 }

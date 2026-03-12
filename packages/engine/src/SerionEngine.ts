@@ -13,6 +13,8 @@ import { SceneBuilder } from './scene/SceneBuilder';
 import { Frustum } from './math/Frustum';
 import { SActor } from './core/SActor';
 import { EngineAPI } from './core/EngineAPI';
+import { Ray } from './math/Ray';
+import { GizmoSystem } from './editor/GizmoSystem';
 
 
 /**
@@ -29,6 +31,7 @@ export class SerionEngine {
   private rhi: SerionRHI;
   private csmManager = new CascadedShadowManager();
   private api: EngineAPI;
+  private gizmoSystem: GizmoSystem | null = null;
 
   private isRunning: boolean = false;
   private lastTime: number = 0;
@@ -45,6 +48,7 @@ export class SerionEngine {
   private mainCameraFrustum = new Frustum();
   private visibleActors: SActor[] = new Array(10000);
   private visibleActorCount = 0;
+  private staticPickingRay = new Ray();
 
   // Stride 40 floats (160 bytes)
   private batchBuffer = new Float32Array(10000 * 40);
@@ -92,6 +96,8 @@ export class SerionEngine {
 
       await this.rhi.initialize(canvas, this.transformPool.maxEntities);
       this.geometryRegistry.initialize(this.rhi.getDevice());
+
+      this.gizmoSystem = new GizmoSystem(this.rhi.getDevice(), this.rhi.getGizmoLayout());
 
       // Showcase Camera
       const cameraActor = this.activeWorld.spawnActor('Camera');
@@ -151,6 +157,21 @@ export class SerionEngine {
 
         // Batch Rendering Pass
         this.renderPBRBatch();
+
+        // --- GIZMO PHASE ---
+        if (this.gizmoSystem) {
+          let selectedActor: SActor | null = null;
+          for (const actor of this.activeWorld.getActors().values()) {
+            if (actor.isSelected) {
+              selectedActor = actor;
+              break;
+            }
+          }
+          this.gizmoSystem.update(this.rhi.getDevice().queue, selectedActor);
+          if (selectedActor) {
+            this.rhi.renderGizmos(this.gizmoSystem);
+          }
+        }
 
         // --- TELEMETRY PHASE (Capa 13.6) ---
         this.telemetryFrames++;
@@ -372,4 +393,31 @@ export class SerionEngine {
   }
 
   public getRHI(): SerionRHI { return this.rhi; }
+
+  /**
+   * Mouse Picking en el mundo 3D (Lanza un rayo).
+   * @returns ID del actor seleccionado o null si no se golpeó nada.
+   */
+  public pickActor(ndcX: number, ndcY: number): number | null {
+    const camera = this.cameraManager.getActiveCamera();
+    if (!camera) return null;
+
+    // Desproyectar en el rayo estático
+    camera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
+
+    let closestId: number | null = null;
+    let minDistance = Infinity;
+
+    for (const actor of this.activeWorld.getActors().values()) {
+      if (!actor.staticMesh) continue;
+      
+      const t = this.staticPickingRay.intersectAABB(actor.worldAABB);
+      if (t !== null && t < minDistance) {
+        minDistance = t;
+        closestId = actor.id;
+      }
+    }
+
+    return closestId;
+  }
 }
