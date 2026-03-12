@@ -9,33 +9,45 @@ export class SerionViewportOverlay extends HTMLElement {
   connectedCallback(): void {
     this.render();
     this.setupListeners();
-    this.syncUI(); // Sincronización inicial
+    this.syncUI();
   }
 
   private setupListeners(): void {
-    // Escuchar a la UI (Clics)
-    this.shadowRoot!.querySelectorAll('.tool-btn').forEach(btn => {
+    const root = this.shadowRoot!;
+
+    // 1. Herramientas de Transformación
+    root.querySelectorAll('.tool-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const mode = (e.currentTarget as HTMLElement).dataset.mode as TransformMode;
         if (mode) EditorState.setTransformMode(mode);
       });
     });
 
-    this.shadowRoot!.querySelectorAll('.space-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const space = (e.currentTarget as HTMLElement).dataset.space as TransformSpace;
-        if (space) EditorState.setTransformSpace(space);
-      });
+    // 2. Toggle de Espacio (World / Local)
+    const spaceBtn = root.querySelector('.space-toggle-btn') as HTMLElement;
+    spaceBtn.addEventListener('click', () => {
+      const newSpace = EditorState.transformSpace === 'world' ? 'local' : 'world';
+      EditorState.setTransformSpace(newSpace);
     });
 
-    this.shadowRoot!.querySelectorAll('.snap-btn').forEach(btn => {
+    // 3. Toggles de Imanes (Snapping)
+    root.querySelectorAll('.snap-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const snap = (e.currentTarget as HTMLElement).dataset.snap as 'translation' | 'rotation' | 'scale';
         if (snap) EditorState.toggleSnap(snap);
       });
     });
 
-    // Escuchar al Cerebro (Motor/Teclado)
+    // 4. Dropdowns de Valores (Selects)
+    root.querySelectorAll('.snap-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const type = target.dataset.snapType as 'translation' | 'rotation' | 'scale';
+        EditorState.setSnapValue(type, parseFloat(target.value));
+      });
+    });
+
+    // Escuchar eventos globales del Cerebro
     window.addEventListener('serion:transform-mode-changed', () => this.syncUI());
     window.addEventListener('serion:transform-space-changed', () => this.syncUI());
     window.addEventListener('serion:transform-snap-changed', () => this.syncUI());
@@ -44,20 +56,24 @@ export class SerionViewportOverlay extends HTMLElement {
   private syncUI(): void {
     const root = this.shadowRoot!;
     
-    // Sincronizar Herramientas
+    // Herramientas
     root.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-    const activeTool = root.querySelector(`.tool-btn[data-mode="${EditorState.transformMode}"]`);
-    if (activeTool) activeTool.classList.add('active');
+    root.querySelector(`.tool-btn[data-mode="${EditorState.transformMode}"]`)?.classList.add('active');
 
-    // Sincronizar Espacio
-    root.querySelectorAll('.space-btn').forEach(btn => btn.classList.remove('active'));
-    const activeSpace = root.querySelector(`.space-btn[data-space="${EditorState.transformSpace}"]`);
-    if (activeSpace) activeSpace.classList.add('active');
+    // Espacio Toggle
+    const spaceBtn = root.querySelector('.space-toggle-btn') as HTMLElement;
+    spaceBtn.textContent = EditorState.transformSpace === 'world' ? '🌐' : '📦';
+    spaceBtn.title = EditorState.transformSpace === 'world' ? 'World Space' : 'Local Space';
 
-    // Sincronizar Imanes
+    // Imanes Activos
     root.querySelector('.snap-btn[data-snap="translation"]')?.classList.toggle('active', EditorState.snapTranslationEnabled);
     root.querySelector('.snap-btn[data-snap="rotation"]')?.classList.toggle('active', EditorState.snapRotationEnabled);
     root.querySelector('.snap-btn[data-snap="scale"]')?.classList.toggle('active', EditorState.snapScaleEnabled);
+
+    // Valores de Selects
+    (root.querySelector('.snap-select[data-snap-type="translation"]') as HTMLSelectElement).value = EditorState.snapTranslationValue.toString();
+    (root.querySelector('.snap-select[data-snap-type="rotation"]') as HTMLSelectElement).value = EditorState.snapRotationValue.toString();
+    (root.querySelector('.snap-select[data-snap-type="scale"]') as HTMLSelectElement).value = EditorState.snapScaleValue.toString();
   }
 
   private render(): void {
@@ -68,46 +84,62 @@ export class SerionViewportOverlay extends HTMLElement {
           top: 10px;
           right: 10px;
           display: flex;
-          gap: 10px;
-          pointer-events: none; /* Deja pasar los clics al canvas por defecto */
+          gap: 12px;
+          pointer-events: none;
           z-index: 10;
+          font-family: sans-serif;
         }
         .toolbar-group {
           display: flex;
-          background: rgba(22, 22, 22, 0.85); /* --serion-bg-1 translúcido */
+          align-items: center;
+          background: rgba(22, 22, 22, 0.85);
           border: 1px solid var(--serion-border, #2B2B2B);
           border-radius: 4px;
           padding: 2px;
-          pointer-events: auto; /* Reactiva los clics en los botones */
+          pointer-events: auto;
           backdrop-filter: blur(4px);
         }
         button {
           background: transparent;
           border: none;
           color: #888;
-          width: 32px;
-          height: 32px;
+          width: 30px;
+          height: 30px;
           border-radius: 3px;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 14px;
-          transition: all 0.2s;
+          transition: background 0.1s, color 0.1s;
         }
         button:hover {
           background: rgba(255, 255, 255, 0.1);
           color: #DDD;
         }
         button.active {
-          background: rgba(0, 112, 255, 0.2); /* Fondo sutil con accent */
+          background: rgba(0, 112, 255, 0.2);
           color: var(--serion-accent, #0070FF);
         }
         .divider {
           width: 1px;
+          height: 20px;
           background: var(--serion-border, #2B2B2B);
-          margin: 4px;
+          margin: 0 4px;
         }
+        select.snap-select {
+          background: transparent;
+          color: #888;
+          border: none;
+          outline: none;
+          cursor: pointer;
+          font-size: 11px;
+          padding: 0 4px 0 0;
+          margin-right: 4px;
+          appearance: auto;
+        }
+        select.snap-select:hover { color: #DDD; }
+        option { background: var(--serion-bg-2, #262626); color: #DDD; }
       </style>
 
       <div class="toolbar-group">
@@ -118,14 +150,46 @@ export class SerionViewportOverlay extends HTMLElement {
       </div>
 
       <div class="toolbar-group">
-        <button class="space-btn" data-space="world" title="World Space">🌐</button>
-        <button class="space-btn" data-space="local" title="Local Space">📦</button>
+        <button class="space-toggle-btn" title="Toggle Space"></button>
       </div>
 
       <div class="toolbar-group">
         <button class="snap-btn" data-snap="translation" title="Snap to Grid">▦</button>
+        <div class="divider"></div>
+        <select class="snap-select" data-snap-type="translation">
+          <option value="1">1</option>
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
         <button class="snap-btn" data-snap="rotation" title="Snap Rotation">∠</button>
+        <div class="divider"></div>
+        <select class="snap-select" data-snap-type="rotation">
+          <option value="5">5°</option>
+          <option value="10">10°</option>
+          <option value="15">15°</option>
+          <option value="30">30°</option>
+          <option value="45">45°</option>
+          <option value="90">90°</option>
+          <option value="120">120°</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
         <button class="snap-btn" data-snap="scale" title="Snap Scale">◱</button>
+        <div class="divider"></div>
+        <select class="snap-select" data-snap-type="scale">
+          <option value="0.0625">0.0625</option>
+          <option value="0.125">0.125</option>
+          <option value="0.25">0.25</option>
+          <option value="0.5">0.5</option>
+          <option value="1">1.0</option>
+        </select>
       </div>
     `;
   }
