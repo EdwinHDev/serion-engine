@@ -42,7 +42,27 @@ export class SerionViewport extends HTMLElement {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     let isDragging = false;
-    this.canvas.addEventListener('mousemove', () => { isDragging = true; });
+    this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
+      isDragging = true;
+      
+      // Si el puntero está bloqueado (navegación), no hacemos hover
+      if (document.pointerLockElement) return;
+
+      const rect = this.canvas!.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const ndcX = (x / rect.width) * 2 - 1;
+      const ndcY = -(y / rect.height) * 2 + 1;
+
+      // Preguntarle al motor si estamos tocando el Gizmo
+      const hoveredGizmoPart = this.engine.pickGizmo(ndcX, ndcY);
+      if (hoveredGizmoPart) {
+        this.canvas!.style.cursor = 'pointer'; 
+      } else {
+        this.canvas!.style.cursor = 'default';
+      }
+    });
 
     // Gestión de Pointer Lock estilo Editor (Sólo al mantener Click Derecho)
     this.canvas.addEventListener('mousedown', (e) => {

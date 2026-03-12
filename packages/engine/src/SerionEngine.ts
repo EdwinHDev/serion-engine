@@ -417,4 +417,27 @@ export class SerionEngine {
 
     return closestId;
   }
+
+  /**
+   * Mouse Picking contra el Gizmo de Traslación.
+   * @returns Parte del gizmo seleccionada o null.
+   */
+  public pickGizmo(ndcX: number, ndcY: number): string | null {
+    const activeCamera = this.cameraManager.getActiveCamera();
+    if (!this.gizmoSystem || !activeCamera) return null;
+
+    let selectedActor: SActor | null = null;
+    for (const actor of this.activeWorld.getActors().values()) {
+      if (actor.isSelected) { selectedActor = actor; break; }
+    }
+
+    if (!selectedActor) return null;
+
+    activeCamera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
+    const hitPart = this.gizmoSystem.hitTest(this.staticPickingRay, activeCamera, selectedActor);
+
+    this.gizmoSystem.updateHover(this.rhi.getDevice(), this.rhi.getDevice().queue, hitPart);
+
+    return hitPart;
+  }
 }
