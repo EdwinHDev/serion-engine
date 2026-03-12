@@ -111,6 +111,28 @@ export class SerionEngine {
             this.gizmoSystem.space = e.detail.space;
           }
         }) as EventListener);
+
+        window.addEventListener('serion:force-transform', ((e: CustomEvent) => {
+          if (!this.activeWorld) return;
+          const actor = this.activeWorld.getActors().get(e.detail.id);
+          if (actor) {
+            const s = e.detail.state;
+            actor.setPosition(s.p[0], s.p[1], s.p[2]);
+            if (actor.setRotation) actor.setRotation(s.r[0], s.r[1], s.r[2], s.r[3]);
+            else { 
+              actor.rotationX = s.r[0]; 
+              actor.rotationY = s.r[1]; 
+              actor.rotationZ = s.r[2]; 
+              if (actor.rotationW !== undefined) actor.rotationW = s.r[3]; 
+            }
+            if (actor.setScale) actor.setScale(s.s[0], s.s[1], s.s[2]);
+            else { 
+              actor.scaleX = s.s[0]; 
+              actor.scaleY = s.s[1]; 
+              actor.scaleZ = s.s[2]; 
+            }
+          }
+        }) as EventListener);
       }
 
       // Showcase Camera
@@ -488,6 +510,11 @@ export class SerionEngine {
   }
 
   public endGizmoDrag(): void {
-    if (this.gizmoSystem) this.gizmoSystem.endDrag();
+    if (!this.gizmoSystem || !this.activeWorld) return;
+    let selectedActor: SActor | null = null;
+    for (const actor of this.activeWorld.getActors().values()) {
+      if (actor.isSelected) { selectedActor = actor; break; }
+    }
+    this.gizmoSystem.endDrag(selectedActor);
   }
 }

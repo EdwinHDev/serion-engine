@@ -4,6 +4,8 @@
  */
 
 import { EditorState } from '../core/EditorState';
+import { CommandHistory } from '../core/CommandHistory';
+import { TransformCommand } from '../commands/TransformCommand';
 
 export class MenuManager {
   private static instance: MenuManager;
@@ -73,7 +75,24 @@ export class MenuManager {
 
   private static startShortcutListener(): void {
     this.isListeningShortcuts = true;
+    window.addEventListener('serion:transform-ended', ((e: CustomEvent) => {
+      const cmd = new TransformCommand(e.detail.actorId, e.detail.start, e.detail.end);
+      CommandHistory.registerCommand(cmd);
+    }) as EventListener);
+
     window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Atajos Universales (Ignoran isNavigating para seguridad máxima)
+      if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        CommandHistory.undo();
+        return;
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        CommandHistory.redo();
+        return;
+      }
+
       // REGLA 1: Ignorar atajos si la cámara está volando (Clic derecho presionado)
       if (EditorState.isNavigating) return;
 

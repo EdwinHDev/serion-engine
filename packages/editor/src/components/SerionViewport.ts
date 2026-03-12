@@ -106,16 +106,16 @@ export class SerionViewport extends HTMLElement {
     });
 
     window.addEventListener('mouseup', (e: MouseEvent) => {
+      // Si el puntero está bloqueado (navegación), desbloquearlo al soltar el Derecho
       if (e.button === 2) {
-        EditorState.isNavigating = false;
         document.exitPointerLock();
-      } else if (e.button === 0) {
-        if (this.isDraggingGizmo) {
-          this.isDraggingGizmo = false;
-          const tooltip = this.shadowRoot!.getElementById('gizmo-tooltip') as HTMLDivElement;
-          if (tooltip) tooltip.style.display = 'none';
-          this.engine.endGizmoDrag();
-        }
+        EditorState.isNavigating = false;
+      } else if (e.button === 0 && this.isDraggingGizmo) {
+        this.isDraggingGizmo = false;
+        const tooltip = this.shadowRoot!.getElementById('gizmo-tooltip') as HTMLDivElement;
+        if (tooltip) tooltip.style.display = 'none';
+
+        if (this.engine) this.engine.endGizmoDrag();
       }
     });
   }

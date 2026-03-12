@@ -421,7 +421,25 @@ export class GizmoSystem {
     }
   }
 
-  public endDrag(): void {
+  public endDrag(actor: SActor | null): void {
+    if (this.isDragging && actor) {
+      const event = new CustomEvent('serion:transform-ended', {
+        detail: {
+          actorId: actor.id,
+          start: {
+            p: [...this.dragStartActorPos],
+            r: [...this.dragStartActorRot],
+            s: [...this.dragStartActorScale]
+          },
+          end: {
+            p: [actor.x, actor.y, actor.z],
+            r: [actor.rotationX || 0, actor.rotationY || 0, actor.rotationZ || 0, actor.rotationW !== undefined ? actor.rotationW : 1],
+            s: [actor.scaleX || 1, actor.scaleY || 1, actor.scaleZ || 1]
+          }
+        }
+      });
+      window.dispatchEvent(event);
+    }
     this.isDragging = false;
     // DEVOLVER AL TRIANGULO DE 1/4
     this.rebuildGeometry();
