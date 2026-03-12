@@ -7,6 +7,8 @@
  */
 export class SerionDetailsPanel extends HTMLElement {
   private currentActorId: number | null = null;
+  private transformStartState: { p: number[], r: number[], s: number[] } | null = null;
+  private isPreviewing: boolean = false;
   private selectionHandler = (e: Event) => this.onSelectionChanged(e as CustomEvent);
 
   constructor() {
@@ -96,6 +98,83 @@ export class SerionDetailsPanel extends HTMLElement {
     ];
   }
 
+  // --- TRANSACTION MANAGER ---
+  private beginTransaction(): void {
+    const api = (window as any).SerionEngineAPI;
+    const actorData = api && this.currentActorId !== null ? api.getActorData(this.currentActorId) : null;
+    if (!actorData) return;
+
+    this.transformStartState = {
+      p: [...actorData.transform.position],
+      r: [...actorData.transform.rotation],
+      s: [...actorData.transform.scale]
+    };
+    this.isPreviewing = true;
+  }
+
+  private applyPreview(): void {
+    const root = this.shadowRoot;
+    if (!root || this.currentActorId === null) return;
+
+    // Extraer y aplicar Posición
+    const px = parseFloat((root.getElementById('pos-x') as HTMLInputElement).value) || 0;
+    const py = parseFloat((root.getElementById('pos-y') as HTMLInputElement).value) || 0;
+    const pz = parseFloat((root.getElementById('pos-z') as HTMLInputElement).value) || 0;
+    this.dispatchPropertyChange('transform', 'position', [px, py, pz]);
+
+    // Extraer y aplicar Rotación (Euler a Quaternion)
+    const rr = parseFloat((root.getElementById('rot-roll') as HTMLInputElement).value) || 0;
+    const rp = parseFloat((root.getElementById('rot-pitch') as HTMLInputElement).value) || 0;
+    const ry = parseFloat((root.getElementById('rot-yaw') as HTMLInputElement).value) || 0;
+    const [qx, qy, qz, qw] = this.eulerToQuat(rr, rp, ry);
+    this.dispatchPropertyChange('transform', 'rotation', [qx, qy, qz, qw]);
+
+    // Extraer y aplicar Escala
+    const sx = parseFloat((root.getElementById('sca-x') as HTMLInputElement).value) || 0;
+    const sy = parseFloat((root.getElementById('sca-y') as HTMLInputElement).value) || 0;
+    const sz = parseFloat((root.getElementById('sca-z') as HTMLInputElement).value) || 0;
+    this.dispatchPropertyChange('transform', 'scale', [sx, sy, sz]);
+  }
+
+  private endTransaction(): void {
+    if (!this.isPreviewing || !this.transformStartState || this.currentActorId === null) return;
+
+    const root = this.shadowRoot;
+    if (!root) return;
+
+    const px = parseFloat((root.getElementById('pos-x') as HTMLInputElement).value) || 0;
+    const py = parseFloat((root.getElementById('pos-y') as HTMLInputElement).value) || 0;
+    const pz = parseFloat((root.getElementById('pos-z') as HTMLInputElement).value) || 0;
+
+    const rr = parseFloat((root.getElementById('rot-roll') as HTMLInputElement).value) || 0;
+    const rp = parseFloat((root.getElementById('rot-pitch') as HTMLInputElement).value) || 0;
+    const ry = parseFloat((root.getElementById('rot-yaw') as HTMLInputElement).value) || 0;
+    const [qx, qy, qz, qw] = this.eulerToQuat(rr, rp, ry);
+
+    const sx = parseFloat((root.getElementById('sca-x') as HTMLInputElement).value) || 0;
+    const sy = parseFloat((root.getElementById('sca-y') as HTMLInputElement).value) || 0;
+    const sz = parseFloat((root.getElementById('sca-z') as HTMLInputElement).value) || 0;
+
+    const endState = { p: [px, py, pz], r: [qx, qy, qz, qw], s: [sx, sy, sz] };
+
+    const eq = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) < 0.0001);
+    const isDifferent = !eq(this.transformStartState.p, endState.p) || 
+                        !eq(this.transformStartState.r, endState.r) || 
+                        !eq(this.transformStartState.s, endState.s);
+
+    if (isDifferent) {
+      this.applyPreview(); // Garantizar que el motor tiene los últimos datos
+
+      // Guardar el Delta en el Historial
+      const event = new CustomEvent('serion:transform-ended', {
+        detail: { actorId: this.currentActorId, start: this.transformStartState, end: endState }
+      });
+      window.dispatchEvent(event);
+    }
+
+    this.isPreviewing = false;
+  }
+
   /**
    * Configura la lógica de arrastre (scrubbing) sobre una etiqueta para cambiar un input numérico usando Pointer Lock.
    */
@@ -107,18 +186,15 @@ export class SerionDetailsPanel extends HTMLElement {
       e.preventDefault();
       isDragging = true;
       accumulatedValue = parseFloat(input.value) || 0;
+      this.beginTransaction(); // INICIA TRANSACCIÓN
       label.requestPointerLock();
     };
 
     const onMouseMove = (e: MouseEvent) => {
-      // En Shadow DOM, document.pointerLockElement devuelve el HOST, 
-      // por lo que debemos comprobar el pointerLockElement de la shadowRoot.
       const isLocked = document.pointerLockElement === this || this.shadowRoot?.pointerLockElement === label;
       if (!isDragging || !isLocked) return;
 
-      // movementX nos da los píxeles físicos movidos por el ratón sin importar los bordes de la pantalla
       accumulatedValue += (e.movementX * sensitivity);
-      
       const step = parseFloat(input.step) || 0.01;
       let displayValue = accumulatedValue;
       if (!isNaN(step) && step > 0) {
@@ -126,20 +202,18 @@ export class SerionDetailsPanel extends HTMLElement {
       }
 
       input.value = (step < 1) ? displayValue.toFixed(2) : Math.round(displayValue).toString();
-      
-      // Disparar evento input para que la lógica de mutación reaccione
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      this.applyPreview(); // PREVIEW EN TIEMPO REAL
     };
 
     const onMouseUp = () => {
       if (isDragging) {
         isDragging = false;
         document.exitPointerLock();
+        this.endTransaction(); // COMMIT Y GUARDADO
       }
     };
 
     label.addEventListener('mousedown', onMouseDown);
-    // Estos se añaden al document para asegurar captura global durante el lock
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
@@ -568,44 +642,43 @@ export class SerionDetailsPanel extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
-    // ─── Transform: Position & Scale ───
-    const vecIds = ['pos-x', 'pos-y', 'pos-z', 'sca-x', 'sca-y', 'sca-z'];
-    vecIds.forEach(id => {
+    // ─── Transform: Lógica UX Estricta (Unreal Engine Standard) ───
+    const transformIds = ['pos-x', 'pos-y', 'pos-z', 'rot-roll', 'rot-pitch', 'rot-yaw', 'sca-x', 'sca-y', 'sca-z'];
+
+    transformIds.forEach(id => {
       const input = root.getElementById(id) as HTMLInputElement;
       if (!input) return;
 
-      const handler = () => {
-        const type = id.startsWith('pos') ? 'position' : 'scale';
-        const prefix = id.startsWith('pos') ? 'pos' : 'sca';
+      input.addEventListener('focus', () => {
+        this.beginTransaction();
+      });
 
-        const x = parseFloat((root.getElementById(`${prefix}-x`) as HTMLInputElement).value) || 0;
-        const y = parseFloat((root.getElementById(`${prefix}-y`) as HTMLInputElement).value) || 0;
-        const z = parseFloat((root.getElementById(`${prefix}-z`) as HTMLInputElement).value) || 0;
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          this.endTransaction();
+          input.blur();
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          // El valor cambia nativamente, programamos el preview para el frame inmediato
+          setTimeout(() => this.applyPreview(), 0);
+        }
+      });
 
-        this.dispatchPropertyChange('transform', type, [x, y, z]);
-      };
+      input.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          this.endTransaction(); // Guarda el salto
+          this.beginTransaction(); // Re-abre transacción por si sigue pulsando
+        }
+      });
 
-      input.addEventListener('input', handler);
-      input.addEventListener('change', handler);
-    });
+      input.addEventListener('change', () => {
+        // Cubre los clics en las flechas nativas del input (Spinners)
+        this.endTransaction();
+        this.beginTransaction();
+      });
 
-    // ─── Transform: Rotation (Euler → Quat) ───
-    const rotIds = ['rot-roll', 'rot-pitch', 'rot-yaw'];
-    rotIds.forEach(id => {
-      const input = root.getElementById(id) as HTMLInputElement;
-      if (!input) return;
-
-      const handler = () => {
-        const rollVal = parseFloat((root.getElementById('rot-roll') as HTMLInputElement).value) || 0;
-        const pitchVal = parseFloat((root.getElementById('rot-pitch') as HTMLInputElement).value) || 0;
-        const yawVal = parseFloat((root.getElementById('rot-yaw') as HTMLInputElement).value) || 0;
-
-        const [qx, qy, qz, qw] = this.eulerToQuat(rollVal, pitchVal, yawVal);
-        this.dispatchPropertyChange('transform', 'rotation', [qx, qy, qz, qw]);
-      };
-
-      input.addEventListener('input', handler);
-      input.addEventListener('change', handler);
+      input.addEventListener('blur', () => {
+        this.endTransaction();
+      });
     });
 
     // ─── Material: Base Color ───
