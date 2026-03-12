@@ -92,7 +92,8 @@ export class MenuManager {
 
       const shortcut = this.shortcuts.get(keyStr);
       if (shortcut) {
-        e.preventDefault(); // Evitar comportamientos por defecto del navegador
+        // No aplicamos preventDefault a atajos simples como W, A, S, D si queremos que la cámara de vuelo los use, 
+        // pero sí disparamos el callback. 
         shortcut.callback();
       }
     });
