@@ -99,6 +99,14 @@ export class SerionEngine {
 
       this.gizmoSystem = new GizmoSystem(this.rhi.getDevice(), this.rhi.getGizmoLayout());
 
+      if (typeof window !== 'undefined') {
+        window.addEventListener('serion:transform-mode-changed', ((e: CustomEvent) => {
+          if (this.gizmoSystem && this.rhi) {
+            this.gizmoSystem.setMode(this.rhi.getDevice(), e.detail.mode);
+          }
+        }) as EventListener);
+      }
+
       // Showcase Camera
       const cameraActor = this.activeWorld.spawnActor('Camera');
       cameraActor.setPosition(0, -900, 400);
