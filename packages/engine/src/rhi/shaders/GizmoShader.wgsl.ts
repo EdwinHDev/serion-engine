@@ -28,11 +28,16 @@ struct VertexOutput {
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     
-    // MAGIA AAA (Constant Scale)
+    // Calculamos el centro del Gizmo en el mundo
     let worldCenter = gizmoModelMatrix * vec4<f32>(0.0, 0.0, 0.0, 1.0);
-    let dist = distance(env.cameraPosition.xyz, worldCenter.xyz);
-    let scaleFactor = max(dist * 0.003, 0.1); // Factor ajustable para mantener tamaño en pantalla
     
+    // Calculamos la distancia exacta entre la lente de la cámara y el Gizmo
+    let dist = distance(env.cameraPosition.xyz, worldCenter.xyz);
+    
+    // MAGIA AAA: El gizmo mantiene un tamaño proporcional perfecto en pantalla
+    let scaleFactor = max(dist * 0.025, 0.15);
+    
+    // Escalamos la geometría y la llevamos a su posición final
     let scaledPos = input.position * scaleFactor;
     let finalWorldPos = gizmoModelMatrix * vec4<f32>(scaledPos, 1.0);
     
@@ -44,6 +49,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    // Pure Unlit Shader: Sin sombras, sin luces, colores eléctricos.
     return vec4<f32>(input.color, 1.0);
 }
 `;

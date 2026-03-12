@@ -26,18 +26,19 @@ export class GizmoSystem {
     };
 
     // Parámetros de Escala Global del Gizmo
-    const SCALE = 15.0;
-    const stemRadius = 0.08 * SCALE;
+    const SCALE = 1.0;
+    const stemRadius = 0.12 * SCALE;
     const stemLength = 5.0 * SCALE;
-    const coneRadius = 0.35 * SCALE;
+    const coneRadius = 0.45 * SCALE;
     const coneHeight = 1.5 * SCALE;
-    const planeSize = 1.0 * SCALE;
-    const planeOffset = 1.2 * SCALE;
+    const planeSize = 1.2 * SCALE;
+    const planeOffset = 1.5 * SCALE;
     const centerSize = 0.3 * SCALE;
 
-    const red = [1.0, 0.1, 0.1];
-    const green = [0.1, 1.0, 0.1];
-    const blue = [0.1, 0.3, 1.0];
+    // Colores eléctricos puros (Bypass Tonemapping)
+    const red = [1.0, 0.05, 0.05];
+    const green = [0.05, 1.0, 0.05];
+    const blue = [0.1, 0.25, 1.0];
     const white = [1.0, 1.0, 1.0];
 
     // 1. Helper: Cilindro Procedural (Tallos)

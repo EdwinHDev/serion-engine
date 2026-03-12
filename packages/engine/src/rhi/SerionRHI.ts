@@ -394,7 +394,7 @@ export class SerionRHI {
       fragment: {
         module: this.device.createShaderModule({ code: GizmoShaderWGSL }),
         entryPoint: 'fs_main',
-        targets: [{ format: 'rgba16float' }]
+        targets: [{ format: this.format }]
       },
       primitive: { topology: 'triangle-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
@@ -724,18 +724,6 @@ export class SerionRHI {
     ssaoBlurPass.draw(4, 1, 0, 0);
     ssaoBlurPass.end();
 
-    // 2.8 GIZMO PASS (Superposición AAA)
-    if (gizmoSystem && this.gizmoPipeline) {
-      const gizmoPass = encoder.beginRenderPass({
-        colorAttachments: [{ view: this.hdrTextureView!, loadOp: 'load', storeOp: 'store' }],
-        depthStencilAttachment: { view: this.depthTextureView!, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
-      });
-      gizmoPass.setPipeline(this.gizmoPipeline);
-      gizmoPass.setBindGroup(0, this.cameraBindGroup!);
-      gizmoSystem.draw(gizmoPass);
-      gizmoPass.end();
-    }
-
     // 3. BLOOM PYRAMID (Kawase)
 
     // A. Extracción suave (HDR Scena -> Bloom Mip 0)
@@ -810,6 +798,28 @@ export class SerionRHI {
     postProcessPass.setBindGroup(0, this.postProcessBindGroup!);
     postProcessPass.draw(4, 1, 0, 0);
     postProcessPass.end();
+
+    // 5. GIZMO PASS (Direct to Swapchain - Pure Unlit)
+    // Se dibuja en la textura actual del context para saltarse el Tonemapping
+    if (gizmoSystem && this.gizmoPipeline) {
+      const gizmoPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.context.getCurrentTexture().createView(),
+          loadOp: 'load',
+          storeOp: 'store'
+        }],
+        depthStencilAttachment: {
+          view: this.depthTextureView!,
+          depthClearValue: 1.0,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store'
+        }
+      });
+      gizmoPass.setPipeline(this.gizmoPipeline);
+      gizmoPass.setBindGroup(0, this.cameraBindGroup!);
+      gizmoSystem.draw(gizmoPass);
+      gizmoPass.end();
+    }
 
     this.device.queue.submit([encoder.finish()]);
   }
