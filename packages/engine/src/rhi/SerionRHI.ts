@@ -633,7 +633,8 @@ export class SerionRHI {
     drawCalls: SDrawCall[],
     activeCallCount: number,
     globalEnvData: SGlobalEnvironmentData,
-    fullInstanceData: Float32Array
+    fullInstanceData: Float32Array,
+    gizmoSystem: any = null
   ): void {
     if (!this.device || !this.context || !this.mainPassDescriptor || !this.renderPipeline || !this.canvas) return;
 
@@ -723,6 +724,18 @@ export class SerionRHI {
     ssaoBlurPass.draw(4, 1, 0, 0);
     ssaoBlurPass.end();
 
+    // 2.8 GIZMO PASS (Superposición AAA)
+    if (gizmoSystem && this.gizmoPipeline) {
+      const gizmoPass = encoder.beginRenderPass({
+        colorAttachments: [{ view: this.hdrTextureView!, loadOp: 'load', storeOp: 'store' }],
+        depthStencilAttachment: { view: this.depthTextureView!, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
+      });
+      gizmoPass.setPipeline(this.gizmoPipeline);
+      gizmoPass.setBindGroup(0, this.cameraBindGroup!);
+      gizmoSystem.draw(gizmoPass);
+      gizmoPass.end();
+    }
+
     // 3. BLOOM PYRAMID (Kawase)
 
     // A. Extracción suave (HDR Scena -> Bloom Mip 0)
@@ -797,34 +810,6 @@ export class SerionRHI {
     postProcessPass.setBindGroup(0, this.postProcessBindGroup!);
     postProcessPass.draw(4, 1, 0, 0);
     postProcessPass.end();
-
-    this.device.queue.submit([encoder.finish()]);
-  }
-
-  public renderGizmos(gizmoSystem: any): void {
-    if (!this.device || !this.gizmoPipeline) return;
-
-    const encoder = this.device.createCommandEncoder();
-
-    // Pase de Gizmos - Superposición (Limpia Z a 1.0 para dibujar encima de todo)
-    const gizmoPass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.hdrTextureView!,
-        loadOp: 'load',
-        storeOp: 'store'
-      }],
-      depthStencilAttachment: {
-        view: this.depthTextureView!,
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store'
-      }
-    });
-
-    gizmoPass.setPipeline(this.gizmoPipeline);
-    gizmoPass.setBindGroup(0, this.cameraBindGroup!); // Environment
-    gizmoSystem.draw(gizmoPass);
-    gizmoPass.end();
 
     this.device.queue.submit([encoder.finish()]);
   }

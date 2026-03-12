@@ -155,12 +155,9 @@ export class SerionEngine {
         // --- VISIBILITY PHASE (Capa 13.2) ---
         this.performCulling();
 
-        // Batch Rendering Pass
-        this.renderPBRBatch();
-
-        // --- GIZMO PHASE ---
+        // --- GIZMO PHASE (Update before Rendering) ---
+        let selectedActor: SActor | null = null;
         if (this.gizmoSystem) {
-          let selectedActor: SActor | null = null;
           for (const actor of this.activeWorld.getActors().values()) {
             if (actor.isSelected) {
               selectedActor = actor;
@@ -168,10 +165,10 @@ export class SerionEngine {
             }
           }
           this.gizmoSystem.update(this.rhi.getDevice().queue, selectedActor);
-          if (selectedActor) {
-            this.rhi.renderGizmos(this.gizmoSystem);
-          }
         }
+
+        // Batch Rendering Pass (Inyectamos el GizmoSystem)
+        this.renderPBRBatch(selectedActor ? this.gizmoSystem : null);
 
         // --- TELEMETRY PHASE (Capa 13.6) ---
         this.telemetryFrames++;
@@ -305,7 +302,7 @@ export class SerionEngine {
    * Procesa todas las entidades visibles y organiza sus datos en el buffer de instancias.
    * Optimización: Agrupa por malla para minimizar cambios de estado en la GPU.
    */
-  private renderPBRBatch(): void {
+  private renderPBRBatch(gizmoSystem: GizmoSystem | null = null): void {
     // 1. Contar instancias por malla (Solo sobre los visibles)
     for (const mesh of this.geometryRegistry.getMeshes()) {
       this.meshInstanceCounts.set(mesh.id, 0);
@@ -347,7 +344,7 @@ export class SerionEngine {
     // 4. EL ARREGLO: Envío continuo al RHI. 
     // Siempre llamamos a renderFrame para pintar el Cielo y la Rejilla, aunque no haya actores visibles.
     const activeView = this.batchBuffer.subarray(0, totalInstances * 40);
-    this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment, activeView);
+    this.rhi.renderFrame(this.drawCallPool, activeDrawCallCount, this.globalEnvironment, activeView, gizmoSystem);
   }
 
   /**
