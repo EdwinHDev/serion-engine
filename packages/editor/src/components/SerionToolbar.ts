@@ -167,9 +167,147 @@ export class SerionToolbar extends HTMLElement {
         .action-button:hover {
           background-color: var(--serion-accent-hover);
         }
+
+        /* QUICK ADD STYLES */
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+
+        .add-container { position: relative; display: flex; align-items: center; }
+
+        .btn-add {
+          background: var(--serion-accent);
+          border: none;
+          border-radius: 4px;
+          color: white;
+          padding: 4px 10px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          font-family: inherit;
+          font-weight: 600;
+          font-size: 13px;
+          transition: background 0.1s;
+        }
+
+        .btn-add:hover { background: #0080FF; }
+        .btn-add:active { background: #0050BB; }
+
+        .chevron { opacity: 0.7; margin-top: 2px; }
+
+        /* Dropdown UE5 Style */
+        .quick-add-menu {
+          position: absolute;
+          top: calc(100% + 6px);
+          left: 0;
+          width: 200px;
+          background: var(--serion-bg-2);
+          border: 1px solid var(--serion-border);
+          border-radius: 4px;
+          box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+          display: none;
+          flex-direction: column;
+          padding: 6px 0;
+          z-index: 9999;
+        }
+
+        .quick-add-menu.visible { display: flex; }
+
+        .section-header {
+          font-size: 10px;
+          font-weight: 800;
+          color: #777;
+          padding: 6px 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+        }
+
+        .menu-item {
+          padding: 6px 14px;
+          font-size: 13px;
+          color: #ccc;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+        }
+
+        .menu-item:hover {
+          background: var(--serion-accent);
+          color: white;
+        }
+
+        .menu-divider {
+          height: 1px;
+          background: var(--serion-border);
+          margin: 4px 0;
+        }
+
+        .spacer-v {
+          width: 1px;
+          height: 16px;
+          background: var(--serion-border);
+          margin: 0 12px;
+          opacity: 0.5;
+        }
       </style>
       
       <div class="logo">SERION<span>ENGINE</span></div>
+
+      <div class="toolbar-left">
+        <div class="add-container">
+          <button class="btn-add" id="btn-quick-add" title="Add instances to the world">
+            <span class="icon-cube-plus">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                  <circle cx="18" cy="18" r="5" fill="var(--serion-accent)" stroke="none"></circle>
+                  <line x1="18" y1="16" x2="18" y2="20" stroke="white" stroke-width="2"></line>
+                  <line x1="16" y1="18" x2="20" y2="18" stroke="white" stroke-width="2"></line>
+                </svg>
+            </span>
+            <span class="label">Add</span>
+            <span class="chevron">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <path d="M6 9l6 6 6-6"></path>
+                </svg>
+            </span>
+          </button>
+
+          <div class="quick-add-menu" id="quick-add-dropdown">
+            <div class="menu-section">
+              <div class="section-header">Basic</div>
+              <div class="menu-item" data-action="spawn" data-type="empty">Empty Actor</div>
+              <div class="menu-item" data-action="spawn" data-type="character">Character</div>
+            </div>
+            <div class="menu-divider"></div>
+            <div class="menu-section">
+              <div class="section-header">Lights</div>
+              <div class="menu-item" data-action="spawn" data-type="dir-light">Directional Light</div>
+              <div class="menu-item" data-action="spawn" data-type="point-light">Point Light</div>
+              <div class="menu-item" data-action="spawn" data-type="sky-light">Sky Light</div>
+            </div>
+            <div class="menu-divider"></div>
+            <div class="menu-section">
+              <div class="section-header">Shapes</div>
+              <div class="menu-item" data-action="spawn" data-type="cube">Cube</div>
+              <div class="menu-item" data-action="spawn" data-type="sphere">Sphere</div>
+              <div class="menu-item" data-action="spawn" data-type="cylinder">Cylinder</div>
+              <div class="menu-item" data-action="spawn" data-type="plane">Plane</div>
+            </div>
+            <div class="menu-divider"></div>
+            <div class="menu-section">
+              <div class="section-header">Visual Effects</div>
+              <div class="menu-item" data-action="spawn" data-type="niagara">Niagara System</div>
+              <div class="menu-item" data-action="spawn" data-type="volumetric">Volumetric Cloud</div>
+            </div>
+          </div>
+        </div>
+        <div class="spacer-v"></div>
+      </div>
       
       <div class="nav-items">
         <div class="nav-item" id="menu-file">File</div>
@@ -201,5 +339,34 @@ export class SerionToolbar extends HTMLElement {
     });
 
     this.shadowRoot.getElementById('btn-select-mode')?.addEventListener('click', (e) => this.openModePanel(e as MouseEvent));
+
+    this.setupQuickAdd();
+  }
+
+  private setupQuickAdd() {
+    const btn = this.shadowRoot?.getElementById('btn-quick-add');
+    const menu = this.shadowRoot?.getElementById('quick-add-dropdown');
+
+    btn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu?.classList.toggle('visible');
+    });
+
+    // Cerrar al hacer clic fuera
+    window.addEventListener('click', () => {
+      menu?.classList.remove('visible');
+    });
+
+    // Placeholder para acciones futuras
+    menu?.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const action = target.getAttribute('data-action');
+      const type = target.getAttribute('data-type');
+
+      if (action === 'spawn' && type) {
+        console.log(`[Serion History] Preparado para registrar Spawn de: ${type}`);
+        // No hacemos nada todavía, siguiendo las reglas del Arquitecto.
+      }
+    });
   }
 }
