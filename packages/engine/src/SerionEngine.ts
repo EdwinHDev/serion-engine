@@ -105,6 +105,12 @@ export class SerionEngine {
             this.gizmoSystem.setMode(this.rhi.getDevice(), e.detail.mode);
           }
         }) as EventListener);
+
+        window.addEventListener('serion:transform-space-changed', ((e: CustomEvent) => {
+          if (this.gizmoSystem) {
+            this.gizmoSystem.space = e.detail.space;
+          }
+        }) as EventListener);
       }
 
       // Showcase Camera

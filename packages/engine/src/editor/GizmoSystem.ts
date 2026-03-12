@@ -1,5 +1,4 @@
 import { SActor } from '../core/SActor';
-import { SMat4 } from '../math/SMath';
 import { Ray } from '../math/Ray';
 import { SCamera } from '../camera/SCamera';
 import { GizmoGeometryBuilder, GizmoState, GIZMO_ROT_RADIUS, GIZMO_ROT_WIDTH, GizmoPart, TransformMode } from './GizmoGeometryBuilder';
@@ -14,6 +13,7 @@ export class GizmoSystem {
   private vertexCount = 0;
 
   public mode: TransformMode = 'translate';
+  public space: 'world' | 'local' = 'world';
   public hoveredPart: GizmoPart | null = null;
   public isDragging = false;
 
@@ -140,8 +140,13 @@ export class GizmoSystem {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const scale = Math.max(dist * 0.025, 0.15);
 
-    const localOrigin = [(ray.origin[0] - actor.x) / scale, (ray.origin[1] - actor.y) / scale, (ray.origin[2] - actor.z) / scale];
-    const localDir = [ray.direction[0], ray.direction[1], ray.direction[2]];
+    const m = this.gizmoMatrix;
+    const rDirX = ray.direction[0], rDirY = ray.direction[1], rDirZ = ray.direction[2];
+    const ox = (ray.origin[0] - actor.x) / scale, oy = (ray.origin[1] - actor.y) / scale, oz = (ray.origin[2] - actor.z) / scale;
+
+    // Inversa de rotación (Transpuesta) para enviar el rayo al espacio local del Gizmo
+    const localDir = [rDirX * m[0] + rDirY * m[1] + rDirZ * m[2], rDirX * m[4] + rDirY * m[5] + rDirZ * m[6], rDirX * m[8] + rDirY * m[9] + rDirZ * m[10]];
+    const localOrigin = [ox * m[0] + oy * m[1] + oz * m[2], ox * m[4] + oy * m[5] + oz * m[6], ox * m[8] + oy * m[9] + oz * m[10]];
 
     let closestT = Infinity;
     let hitPart: GizmoPart | null = null;
@@ -205,23 +210,31 @@ export class GizmoSystem {
     this.dragAxis = [0, 0, 0];
     this.currentDeltaAngle = 0;
 
-    if (this.mode === 'translate' || this.mode === 'scale') {
-      const viewDir = [camera.actor.x - actor.x, camera.actor.y - actor.y, camera.actor.z - actor.z];
-      const vl = Math.sqrt(viewDir[0] ** 2 + viewDir[1] ** 2 + viewDir[2] ** 2);
-      if (vl > 0) { viewDir[0] /= vl; viewDir[1] /= vl; viewDir[2] /= vl; }
+    let localAxis = [0, 0, 0]; let localNormal = [0, 0, 0];
+    const m = this.gizmoMatrix;
 
-      if (this.hoveredPart === 'x') { this.dragAxis = [1, 0, 0]; this.dragPlaneNormal = [0, viewDir[1], viewDir[2]]; }
-      else if (this.hoveredPart === 'y') { this.dragAxis = [0, 1, 0]; this.dragPlaneNormal = [viewDir[0], 0, viewDir[2]]; }
-      else if (this.hoveredPart === 'z') { this.dragAxis = [0, 0, 1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], 0]; }
-      else if (this.hoveredPart === 'xy') { this.dragAxis = [1, 1, 0]; this.dragPlaneNormal = [0, 0, 1]; }
-      else if (this.hoveredPart === 'xz') { this.dragAxis = [1, 0, 1]; this.dragPlaneNormal = [0, 1, 0]; }
-      else if (this.hoveredPart === 'yz') { this.dragAxis = [0, 1, 1]; this.dragPlaneNormal = [1, 0, 0]; }
-      else if (this.hoveredPart === 'center') { this.dragAxis = [1, 1, 1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], viewDir[2]]; }
+    if (this.mode === 'translate' || this.mode === 'scale') {
+      const vx = camera.actor.x - actor.x; const vy = camera.actor.y - actor.y; const vz = camera.actor.z - actor.z;
+      const lvx = vx * m[0] + vy * m[1] + vz * m[2]; const lvy = vx * m[4] + vy * m[5] + vz * m[6]; const lvz = vx * m[8] + vy * m[9] + vz * m[10];
+      const vl = Math.sqrt(lvx * lvx + lvy * lvy + lvz * lvz);
+      const lDir = vl > 0 ? [lvx / vl, lvy / vl, lvz / vl] : [0, 0, 1];
+
+      if (this.hoveredPart === 'x') { localAxis = [1, 0, 0]; localNormal = [0, lDir[1], lDir[2]]; }
+      else if (this.hoveredPart === 'y') { localAxis = [0, 1, 0]; localNormal = [lDir[0], 0, lDir[2]]; }
+      else if (this.hoveredPart === 'z') { localAxis = [0, 0, 1]; localNormal = [lDir[0], lDir[1], 0]; }
+      else if (this.hoveredPart === 'xy') { localAxis = [1, 1, 0]; localNormal = [0, 0, 1]; }
+      else if (this.hoveredPart === 'xz') { localAxis = [1, 0, 1]; localNormal = [0, 1, 0]; }
+      else if (this.hoveredPart === 'yz') { localAxis = [0, 1, 1]; localNormal = [1, 0, 0]; }
+      else if (this.hoveredPart === 'center') { localAxis = [1, 1, 1]; localNormal = lDir; }
     } else if (this.mode === 'rotate') {
-      if (this.hoveredPart === 'rx') { this.dragPlaneNormal = [1, 0, 0]; this.dragAxis = [1, 0, 0]; }
-      else if (this.hoveredPart === 'ry') { this.dragPlaneNormal = [0, 1, 0]; this.dragAxis = [0, 1, 0]; }
-      else if (this.hoveredPart === 'rz') { this.dragPlaneNormal = [0, 0, 1]; this.dragAxis = [0, 0, 1]; }
+      if (this.hoveredPart === 'rx') { localAxis = [1, 0, 0]; localNormal = [1, 0, 0]; }
+      else if (this.hoveredPart === 'ry') { localAxis = [0, 1, 0]; localNormal = [0, 1, 0]; }
+      else if (this.hoveredPart === 'rz') { localAxis = [0, 0, 1]; localNormal = [0, 0, 1]; }
     }
+
+    // Rotar ejes locales al mundo
+    this.dragAxis = [localAxis[0] * m[0] + localAxis[1] * m[4] + localAxis[2] * m[8], localAxis[0] * m[1] + localAxis[1] * m[5] + localAxis[2] * m[9], localAxis[0] * m[2] + localAxis[1] * m[6] + localAxis[2] * m[10]];
+    this.dragPlaneNormal = [localNormal[0] * m[0] + localNormal[1] * m[4] + localNormal[2] * m[8], localNormal[0] * m[1] + localNormal[1] * m[5] + localNormal[2] * m[9], localNormal[0] * m[2] + localNormal[1] * m[6] + localNormal[2] * m[10]];
 
     const nl = Math.sqrt(this.dragPlaneNormal[0] ** 2 + this.dragPlaneNormal[1] ** 2 + this.dragPlaneNormal[2] ** 2);
     if (nl > 0) { this.dragPlaneNormal[0] /= nl; this.dragPlaneNormal[1] /= nl; this.dragPlaneNormal[2] /= nl; }
@@ -271,15 +284,45 @@ export class GizmoSystem {
       const hitZ = ray.origin[2] + ray.direction[2] * t;
 
       if (this.mode === 'translate') {
-        const hitPos = [hitX, hitY, hitZ];
-        let newX = hitPos[0] - this.dragOffset[0]; let newY = hitPos[1] - this.dragOffset[1]; let newZ = hitPos[2] - this.dragOffset[2];
-        if (this.dragAxis[0] === 0) newX = this.dragStartActorPos[0]; if (this.dragAxis[1] === 0) newY = this.dragStartActorPos[1]; if (this.dragAxis[2] === 0) newZ = this.dragStartActorPos[2];
-        if (snapEnabled && snapValue > 0) {
-          if (this.dragAxis[0] !== 0) newX = Math.round(newX / snapValue) * snapValue;
-          if (this.dragAxis[1] !== 0) newY = Math.round(newY / snapValue) * snapValue;
-          if (this.dragAxis[2] !== 0) newZ = Math.round(newZ / snapValue) * snapValue;
+        // FIX CRÍTICO: El delta total se calcula contra el inicio absoluto, no contra el actor en movimiento
+        const totalDx = (hitX - this.dragOffset[0]) - this.dragStartActorPos[0];
+        const totalDy = (hitY - this.dragOffset[1]) - this.dragStartActorPos[1];
+        const totalDz = (hitZ - this.dragOffset[2]) - this.dragStartActorPos[2];
+
+        let moveX = totalDx, moveY = totalDy, moveZ = totalDz;
+
+        if (this.hoveredPart !== 'center') {
+          if (this.hoveredPart === 'x' || this.hoveredPart === 'y' || this.hoveredPart === 'z') {
+            // Proyección en 1 Eje (Vector Dot Product)
+            const al = Math.sqrt(this.dragAxis[0] ** 2 + this.dragAxis[1] ** 2 + this.dragAxis[2] ** 2);
+            const nx = this.dragAxis[0] / al, ny = this.dragAxis[1] / al, nz = this.dragAxis[2] / al;
+            let dot = totalDx * nx + totalDy * ny + totalDz * nz;
+
+            if (snapEnabled && snapValue > 0) dot = Math.round(dot / snapValue) * snapValue;
+            moveX = nx * dot; moveY = ny * dot; moveZ = nz * dot;
+          } else {
+            // Proyección en Plano
+            const dotN = totalDx * this.dragPlaneNormal[0] + totalDy * this.dragPlaneNormal[1] + totalDz * this.dragPlaneNormal[2];
+            moveX = totalDx - this.dragPlaneNormal[0] * dotN;
+            moveY = totalDy - this.dragPlaneNormal[1] * dotN;
+            moveZ = totalDz - this.dragPlaneNormal[2] * dotN;
+
+            if (snapEnabled && snapValue > 0) {
+              moveX = Math.round(moveX / snapValue) * snapValue;
+              moveY = Math.round(moveY / snapValue) * snapValue;
+              moveZ = Math.round(moveZ / snapValue) * snapValue;
+            }
+          }
+        } else {
+          if (snapEnabled && snapValue > 0) {
+            moveX = Math.round(moveX / snapValue) * snapValue;
+            moveY = Math.round(moveY / snapValue) * snapValue;
+            moveZ = Math.round(moveZ / snapValue) * snapValue;
+          }
         }
-        actor.setPosition(newX, newY, newZ);
+
+        // Se aplica siempre el movimiento total al punto de anclaje inicial estático
+        actor.setPosition(this.dragStartActorPos[0] + moveX, this.dragStartActorPos[1] + moveY, this.dragStartActorPos[2] + moveZ);
       } else if (this.mode === 'scale') {
         // Matemática Unreal: Proporción geométrica sobre los ejes activos
         let startD = 0; let currentD = 0;
@@ -386,9 +429,27 @@ export class GizmoSystem {
 
   public update(queue: GPUQueue, selectedActor: SActor | null): void {
     if (!selectedActor || !this.matrixBuffer) return;
-    SMat4.identity(this.gizmoMatrix);
-    this.gizmoMatrix[12] = selectedActor.x; this.gizmoMatrix[13] = selectedActor.y; this.gizmoMatrix[14] = selectedActor.z;
-    this.gizmoMatrix[16] = 0.0; // Desactivar configuraciones de shader especiales
+
+    if (this.space === 'local' && this.mode !== 'scale') { // Escala siempre se representa visualmente local/alineada
+      const qx = selectedActor.rotationX || 0; const qy = selectedActor.rotationY || 0;
+      const qz = selectedActor.rotationZ || 0; const qw = selectedActor.rotationW !== undefined ? selectedActor.rotationW : 1.0;
+
+      const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;
+      const xx = qx * x2, xy = qx * y2, xz = qx * z2, yy = qy * y2, yz = qy * z2, zz = qz * z2;
+      const wx = qw * x2, wy = qw * y2, wz = qw * z2;
+
+      this.gizmoMatrix[0] = 1 - (yy + zz); this.gizmoMatrix[1] = xy + wz; this.gizmoMatrix[2] = xz - wy; this.gizmoMatrix[3] = 0;
+      this.gizmoMatrix[4] = xy - wz; this.gizmoMatrix[5] = 1 - (xx + zz); this.gizmoMatrix[6] = yz + wx; this.gizmoMatrix[7] = 0;
+      this.gizmoMatrix[8] = xz + wy; this.gizmoMatrix[9] = yz - wx; this.gizmoMatrix[10] = 1 - (xx + yy); this.gizmoMatrix[11] = 0;
+    } else {
+      this.gizmoMatrix[0] = 1; this.gizmoMatrix[1] = 0; this.gizmoMatrix[2] = 0; this.gizmoMatrix[3] = 0;
+      this.gizmoMatrix[4] = 0; this.gizmoMatrix[5] = 1; this.gizmoMatrix[6] = 0; this.gizmoMatrix[7] = 0;
+      this.gizmoMatrix[8] = 0; this.gizmoMatrix[9] = 0; this.gizmoMatrix[10] = 1; this.gizmoMatrix[11] = 0;
+    }
+
+    this.gizmoMatrix[12] = selectedActor.x; this.gizmoMatrix[13] = selectedActor.y; this.gizmoMatrix[14] = selectedActor.z; this.gizmoMatrix[15] = 1;
+    this.gizmoMatrix[16] = this.mode === 'rotate' ? 1.0 : 0.0;
+
     queue.writeBuffer(this.matrixBuffer, 0, this.gizmoMatrix);
   }
 
