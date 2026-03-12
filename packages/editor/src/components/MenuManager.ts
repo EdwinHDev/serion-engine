@@ -74,7 +74,10 @@ export class MenuManager {
   private static startShortcutListener(): void {
     this.isListeningShortcuts = true;
     window.addEventListener('keydown', (e: KeyboardEvent) => {
-      // REGLA CRÍTICA: Ignorar si el usuario está escribiendo en un input, textarea o contenteditable
+      // REGLA 1: Ignorar atajos si la cámara está volando (Clic derecho presionado)
+      if (EditorState.isNavigating) return;
+
+      // REGLA 2: Ignorar si el usuario está escribiendo en un input, textarea o contenteditable
       const activeEl = document.activeElement;
       if (activeEl) {
         const tag = activeEl.tagName.toLowerCase();

@@ -457,13 +457,13 @@ export class SerionEngine {
     return hitPart;
   }
 
-  public beginGizmoDrag(ndcX: number, ndcY: number): void {
+  public beginGizmoDrag(ndcX: number, ndcY: number, snapEnabled: boolean = false, snapValue: number = 0): void {
     const activeCamera = this.cameraManager.getActiveCamera();
     if (!this.gizmoSystem || !activeCamera) return;
     for (const actor of this.activeWorld.getActors().values()) {
       if (actor.isSelected) {
         activeCamera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
-        this.gizmoSystem.beginDrag(this.staticPickingRay, activeCamera, actor);
+        this.gizmoSystem.beginDrag(this.staticPickingRay, activeCamera, actor, snapEnabled, snapValue);
         break;
       }
     }

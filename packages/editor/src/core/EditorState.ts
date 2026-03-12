@@ -9,6 +9,9 @@ export type TransformSpace = 'world' | 'local';
 export class EditorState {
   private static selectedActorIds: Set<number> = new Set();
 
+  // --- ESTADO DE INTERACCIÓN ---
+  public static isNavigating: boolean = false;
+
   // --- ESTADO DE TRANSFORMACIÓN ---
   public static transformMode: TransformMode = 'translate';
   public static transformSpace: TransformSpace = 'world';

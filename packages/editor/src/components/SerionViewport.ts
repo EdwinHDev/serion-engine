@@ -49,11 +49,26 @@ export class SerionViewport extends HTMLElement {
       const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
       const ndcY = -(e.offsetY / this.canvas!.clientHeight) * 2 + 1;
 
-      if (this.isDraggingGizmo) {
-        const snapEnabled = EditorState.snapTranslationEnabled;
-        const snapValue = EditorState.snapTranslationValue;
-        this.engine.updateGizmoDrag(ndcX, ndcY, snapEnabled, snapValue);
+      const tooltip = this.shadowRoot!.getElementById('gizmo-tooltip') as HTMLDivElement;
+      
+      if (this.isDraggingGizmo && this.engine) {
+        let snapE = false; let snapV = 0;
+        if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
+        else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
+
+        this.engine.updateGizmoDrag(ndcX, ndcY, snapE, snapV);
+        
+        // Mostrar y mover Tooltip si es Rotación
+        if (EditorState.transformMode === 'rotate' && this.engine.getGizmoSystem()) {
+          const gizmo = this.engine.getGizmoSystem()!;
+          tooltip.style.display = 'block';
+          tooltip.style.left = (e.offsetX + 20) + 'px';
+          tooltip.style.top = (e.offsetY + 20) + 'px';
+          tooltip.textContent = gizmo.getRotationReadout();
+        }
         return; 
+      } else {
+        tooltip.style.display = 'none';
       }
       
       // Hover Visual
@@ -63,6 +78,7 @@ export class SerionViewport extends HTMLElement {
 
     this.canvas.addEventListener('mousedown', (e) => {
       if (e.button === 2) { // Right Click
+        EditorState.isNavigating = true;
         this.canvas?.requestPointerLock();
       } else if (e.button === 0) { // Left Click
         const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
@@ -70,7 +86,11 @@ export class SerionViewport extends HTMLElement {
 
         if (this.engine.isGizmoHovered()) {
           this.isDraggingGizmo = true;
-          this.engine.beginGizmoDrag(ndcX, ndcY);
+          let snapE = false; let snapV = 0;
+          if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
+          else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
+          
+          this.engine.beginGizmoDrag(ndcX, ndcY, snapE, snapV);
           return; 
         }
 
@@ -85,10 +105,13 @@ export class SerionViewport extends HTMLElement {
 
     window.addEventListener('mouseup', (e: MouseEvent) => {
       if (e.button === 2) {
+        EditorState.isNavigating = false;
         document.exitPointerLock();
       } else if (e.button === 0) {
         if (this.isDraggingGizmo) {
           this.isDraggingGizmo = false;
+          const tooltip = this.shadowRoot!.getElementById('gizmo-tooltip') as HTMLDivElement;
+          if (tooltip) tooltip.style.display = 'none';
           this.engine.endGizmoDrag();
         }
       }
@@ -159,11 +182,19 @@ export class SerionViewport extends HTMLElement {
           display: block;
           outline: none;
         }
+
+        #gizmo-tooltip {
+          display: none; position: absolute; background: rgba(0, 0, 0, 0.75);
+          color: white; padding: 4px 8px; border-radius: 4px; pointer-events: none;
+          font-family: monospace; font-size: 13px; font-weight: bold; z-index: 100;
+          backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.1);
+        }
       </style>
       <div class="overlay">
         <div class="status-text">SERION RENDERER (WEBGPU) - READY</div>
       </div>
       <canvas id="serion-canvas" tabindex="0"></canvas>
+      <div id="gizmo-tooltip">0.00°</div>
       <serion-viewport-overlay></serion-viewport-overlay>
     `;
   }
