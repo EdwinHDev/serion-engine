@@ -40,6 +40,9 @@ const registerComponents = () => {
 // Initialize Application
 registerComponents();
 
+import { MenuManager } from './components/MenuManager';
+MenuManager.initializeDefaultShortcuts();
+
 // Add global dropdown instance to body
 const dropdown = document.createElement('serion-dropdown');
 document.body.appendChild(dropdown);

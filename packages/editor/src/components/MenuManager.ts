@@ -3,6 +3,8 @@
  * Manages the state of active dropdowns and global interaction.
  */
 
+import { EditorState } from '../core/EditorState';
+
 export class MenuManager {
   private static instance: MenuManager;
   private activeDropdown: HTMLElement | null = null;
@@ -45,5 +47,62 @@ export class MenuManager {
     if (!path.includes(this.activeDropdown)) {
       this.closeActiveMenu();
     }
+  }
+
+  // --- SHORTCUT MANAGER ---
+  private static shortcuts: Map<string, { id: string, callback: () => void }> = new Map();
+  private static isListeningShortcuts = false;
+
+  /**
+   * Registra un atajo de teclado global.
+   * @param id Identificador único de la acción (ej. 'Transform.Translate')
+   * @param key Tecla asignada (ej. 'w', 'ctrl+s')
+   * @param callback Función a ejecutar
+   */
+  public static registerShortcut(id: string, key: string, callback: () => void): void {
+    const normalizedKey = key.toLowerCase();
+    if (this.shortcuts.has(normalizedKey)) {
+      console.warn(`[MenuManager] Atajo '${normalizedKey}' ya está asignado. Sobrescribiendo con '${id}'.`);
+    }
+    this.shortcuts.set(normalizedKey, { id, callback });
+
+    if (!this.isListeningShortcuts) {
+      this.startShortcutListener();
+    }
+  }
+
+  private static startShortcutListener(): void {
+    this.isListeningShortcuts = true;
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // REGLA CRÍTICA: Ignorar si el usuario está escribiendo en un input, textarea o contenteditable
+      const activeEl = document.activeElement;
+      if (activeEl) {
+        const tag = activeEl.tagName.toLowerCase();
+        const isInput = tag === 'input' || tag === 'textarea';
+        const isEditable = (activeEl as HTMLElement).isContentEditable;
+        if (isInput || isEditable) return;
+      }
+
+      // Construir el string del atajo (ej. 'ctrl+s', 'w')
+      let keyStr = '';
+      if (e.ctrlKey || e.metaKey) keyStr += 'ctrl+';
+      if (e.shiftKey) keyStr += 'shift+';
+      if (e.altKey) keyStr += 'alt+';
+      keyStr += e.key.toLowerCase();
+
+      const shortcut = this.shortcuts.get(keyStr);
+      if (shortcut) {
+        e.preventDefault(); // Evitar comportamientos por defecto del navegador
+        shortcut.callback();
+      }
+    });
+  }
+
+  public static initializeDefaultShortcuts(): void {
+    // Atajos de Transformación (Estándar Unreal)
+    this.registerShortcut('Transform.Select', 'q', () => EditorState.setTransformMode('select'));
+    this.registerShortcut('Transform.Translate', 'w', () => EditorState.setTransformMode('translate'));
+    this.registerShortcut('Transform.Rotate', 'e', () => EditorState.setTransformMode('rotate'));
+    this.registerShortcut('Transform.Scale', 'r', () => EditorState.setTransformMode('scale'));
   }
 }
