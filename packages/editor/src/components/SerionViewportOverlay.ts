@@ -65,8 +65,8 @@ export class SerionViewportOverlay extends HTMLElement {
       <style>
         :host {
           position: absolute;
-          top: 15px;
-          right: 15px;
+          top: 10px;
+          right: 10px;
           display: flex;
           gap: 10px;
           pointer-events: none; /* Deja pasar los clics al canvas por defecto */

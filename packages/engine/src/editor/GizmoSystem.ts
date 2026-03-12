@@ -177,7 +177,7 @@ export class GizmoSystem {
     }
   }
 
-  public updateDrag(ray: Ray, actor: SActor): void {
+  public updateDrag(ray: Ray, actor: SActor, snapEnabled: boolean = false, snapValue: number = 0): void {
     if (!this.isDragging) return;
     const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
     if (t !== null) {
@@ -185,12 +185,21 @@ export class GizmoSystem {
       const hitY = ray.origin[1] + ray.direction[1] * t;
       const hitZ = ray.origin[2] + ray.direction[2] * t;
 
-      let newX = hitX - this.dragOffset[0]; let newY = hitY - this.dragOffset[1]; let newZ = hitZ - this.dragOffset[2];
+      let newX = hitX - this.dragOffset[0]; 
+      let newY = hitY - this.dragOffset[1]; 
+      let newZ = hitZ - this.dragOffset[2];
 
       // Restricción matemática estricta a los ejes permitidos
       if (this.dragAxis[0] === 0) newX = this.dragStartActorPos[0];
       if (this.dragAxis[1] === 0) newY = this.dragStartActorPos[1];
       if (this.dragAxis[2] === 0) newZ = this.dragStartActorPos[2];
+
+      // Aplicar Grid Snapping si está habilitado
+      if (snapEnabled && snapValue > 0) {
+        if (this.dragAxis[0] !== 0) newX = Math.round(newX / snapValue) * snapValue;
+        if (this.dragAxis[1] !== 0) newY = Math.round(newY / snapValue) * snapValue;
+        if (this.dragAxis[2] !== 0) newZ = Math.round(newZ / snapValue) * snapValue;
+      }
 
       actor.setPosition(newX, newY, newZ);
     }

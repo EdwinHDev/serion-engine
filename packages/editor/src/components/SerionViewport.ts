@@ -50,7 +50,9 @@ export class SerionViewport extends HTMLElement {
       const ndcY = -(e.offsetY / this.canvas!.clientHeight) * 2 + 1;
 
       if (this.isDraggingGizmo) {
-        this.engine.updateGizmoDrag(ndcX, ndcY);
+        const snapEnabled = EditorState.snapTranslationEnabled;
+        const snapValue = EditorState.snapTranslationValue;
+        this.engine.updateGizmoDrag(ndcX, ndcY, snapEnabled, snapValue);
         return; 
       }
       

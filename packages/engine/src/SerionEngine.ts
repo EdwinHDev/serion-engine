@@ -461,13 +461,13 @@ export class SerionEngine {
     }
   }
 
-  public updateGizmoDrag(ndcX: number, ndcY: number): void {
+  public updateGizmoDrag(ndcX: number, ndcY: number, snapEnabled: boolean = false, snapValue: number = 0): void {
     const activeCamera = this.cameraManager.getActiveCamera();
     if (!this.gizmoSystem || !activeCamera) return;
     for (const actor of this.activeWorld.getActors().values()) {
       if (actor.isSelected) {
         activeCamera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
-        this.gizmoSystem.updateDrag(this.staticPickingRay, actor);
+        this.gizmoSystem.updateDrag(this.staticPickingRay, actor, snapEnabled, snapValue);
         break;
       }
     }
