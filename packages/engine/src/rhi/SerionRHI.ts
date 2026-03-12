@@ -188,7 +188,7 @@ export class SerionRHI {
 
     this.gizmoLayout = this.device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
       ]
     });
 

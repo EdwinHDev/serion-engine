@@ -7,23 +7,21 @@ export type GizmoPart = 'x' | 'y' | 'z' | 'xy' | 'xz' | 'yz' | 'center' | 'rx' |
 export type TransformMode = 'select' | 'translate' | 'rotate' | 'scale';
 
 export class GizmoSystem {
+  private device: GPUDevice;
   private vertexBuffer: GPUBuffer | null = null;
   private matrixBuffer: GPUBuffer | null = null;
   public matrixBindGroup: GPUBindGroup | null = null;
 
-  private gizmoMatrix = new Float32Array(16);
+  private gizmoMatrix = new Float32Array(20);
   private vertexCount = 0;
   
   public mode: TransformMode = 'translate';
   public hoveredPart: GizmoPart | null = null;
   public isDragging = false;
 
-  // Variables para físicas de arrastre (Traslación/Rotación)
   public dragPlaneNormal = [0,0,0]; public dragPlanePoint = [0,0,0]; 
-  public dragOffset = [0,0,0]; public dragStartActorPos = [0,0,0]; 
-  public dragAxis = [0,0,0];
+  public dragOffset = [0,0,0]; public dragStartActorPos = [0,0,0]; public dragAxis = [0,0,0];
 
-  // AABBs Locales para Traslación
   private readonly hitBoxes: Record<string, { min: number[], max: number[] }> = {
     'center': { min: [-0.4, -0.4, -0.4], max: [0.4, 0.4, 0.4] },
     'x': { min: [0.4, -0.2, -0.2], max: [6.5, 0.2, 0.2] },
@@ -34,23 +32,23 @@ export class GizmoSystem {
     'yz': { min: [-0.1, 1.0, 1.0], max: [0.1, 2.5, 2.5] }
   };
 
-  // Constantes de Rotación
-  private readonly ROT_RADIUS = 4.0;
-  private readonly ROT_TUBE = 0.15;
+  private readonly ROT_RADIUS = 5.0; // Aumentado de 3.5 a 5.0 (Mayor diámetro)
+  private readonly ROT_WIDTH = 0.5;  // Aumentado de 0.35 a 0.5 (Cinta más visible)
 
   constructor(device: GPUDevice, layout: GPUBindGroupLayout) {
+    this.device = device;
     this.createBuffers(device, layout);
-    this.rebuildGeometry(device);
+    this.rebuildGeometry();
   }
 
-  public setMode(device: GPUDevice, newMode: TransformMode): void {
+  public setMode(_device: GPUDevice, newMode: TransformMode): void {
     if (this.mode === newMode) return;
     this.mode = newMode;
     this.hoveredPart = null;
-    this.rebuildGeometry(device);
+    this.rebuildGeometry();
   }
 
-  private rebuildGeometry(device: GPUDevice, queue?: GPUQueue): void {
+  private rebuildGeometry(): void {
     const data: number[] = [];
     const pushV = (x: number, y: number, z: number, c: number[]) => { data.push(x, y, z, c[0], c[1], c[2]); };
 
@@ -66,7 +64,6 @@ export class GizmoSystem {
       const planeSize = 1.2 * SCALE; const planeOffset = 1.5 * SCALE;
       const centerSize = 0.3 * SCALE;
 
-      // Helpers de geometría para traslación
       const addCylinder = (axis: 'x'|'y'|'z', length: number, radius: number, color: number[]) => {
         const segments = 12;
         for(let i=0; i<segments; i++) {
@@ -119,52 +116,73 @@ export class GizmoSystem {
 
     } else if (this.mode === 'rotate') {
       
-      const addTorus = (axis: 'x'|'y'|'z', radius: number, tube: number, color: number[]) => {
-        const radSeg = 48; const tubSeg = 8;
-        for(let i=0; i<radSeg; i++) {
-          for(let j=0; j<tubSeg; j++) {
-            const u1 = (i/radSeg)*Math.PI*2; const v1 = (j/tubSeg)*Math.PI*2;
-            const u2 = ((i+1)/radSeg)*Math.PI*2; const v2 = ((j+1)/tubSeg)*Math.PI*2;
-            const getP = (u: number, v: number) => {
-              const cx = radius * Math.cos(u); const cy = radius * Math.sin(u);
-              const px = (radius + tube * Math.cos(v)) * Math.cos(u);
-              const py = (radius + tube * Math.cos(v)) * Math.sin(u);
-              const pz = tube * Math.sin(v);
-              if (axis === 'z') return [px, py, pz];
-              if (axis === 'y') return [px, pz, py];
-              return [pz, px, py]; // x
-            };
-            const p1 = getP(u1,v1); const p2 = getP(u2,v1); const p3 = getP(u1,v2); const p4 = getP(u2,v2);
-            pushV(p1[0],p1[1],p1[2],color); pushV(p2[0],p2[1],p2[2],color); pushV(p3[0],p3[1],p3[2],color);
-            pushV(p2[0],p2[1],p2[2],color); pushV(p4[0],p4[1],p4[2],color); pushV(p3[0],p3[1],p3[2],color);
-          }
+      // Función para crear Cintas Planas (Ribbons)
+      const addFlatArc = (axis: 'x'|'y'|'z', radius: number, width: number, startAngle: number, endAngle: number, color: number[]) => {
+        const segments = Math.max(12, Math.floor(48 * ((endAngle - startAngle) / (Math.PI * 2))));
+        const r1 = radius - width / 2;
+        const r2 = radius + width / 2;
+
+        for (let i = 0; i < segments; i++) {
+          const t1 = startAngle + (i / segments) * (endAngle - startAngle);
+          const t2 = startAngle + ((i + 1) / segments) * (endAngle - startAngle);
+
+          const c1 = Math.cos(t1); const s1 = Math.sin(t1);
+          const c2 = Math.cos(t2); const s2 = Math.sin(t2);
+
+          const getP = (r: number, c: number, s: number) => {
+            if (axis === 'z') return [r * c, r * s, 0];
+            if (axis === 'y') return [r * s, 0, r * c];
+            return [0, r * c, r * s];
+          };
+
+          const p1 = getP(r1, c1, s1); const p2 = getP(r2, c1, s1);
+          const p3 = getP(r1, c2, s2); const p4 = getP(r2, c2, s2);
+
+          // Doble cara para evitar culling
+          pushV(p1[0],p1[1],p1[2],color); pushV(p2[0],p2[1],p2[2],color); pushV(p3[0],p3[1],p3[2],color);
+          pushV(p2[0],p2[1],p2[2],color); pushV(p4[0],p4[1],p4[2],color); pushV(p3[0],p3[1],p3[2],color);
+          pushV(p1[0],p1[1],p1[2],color); pushV(p3[0],p3[1],p3[2],color); pushV(p2[0],p2[1],p2[2],color);
+          pushV(p2[0],p2[1],p2[2],color); pushV(p3[0],p3[1],p3[2],color); pushV(p4[0],p4[1],p4[2],color);
         }
       };
 
-      addTorus('x', this.ROT_RADIUS, this.ROT_TUBE, getColor('rx', red));
-      addTorus('y', this.ROT_RADIUS, this.ROT_TUBE, getColor('ry', green));
-      addTorus('z', this.ROT_RADIUS, this.ROT_TUBE, getColor('rz', blue));
+      const drawFull = this.isDragging;
+      const activeHover = this.hoveredPart;
+
+      const drawX = !drawFull || activeHover === 'rx';
+      const drawY = !drawFull || activeHover === 'ry';
+      const drawZ = !drawFull || activeHover === 'rz';
+
+      // Magia Unreal: 1/4 círculo en reposo, 360° al arrastrar
+      const spanX = (drawFull && activeHover === 'rx') ? Math.PI * 2 : Math.PI / 2;
+      const spanY = (drawFull && activeHover === 'ry') ? Math.PI * 2 : Math.PI / 2;
+      const spanZ = (drawFull && activeHover === 'rz') ? Math.PI * 2 : Math.PI / 2;
+
+      if (drawX) addFlatArc('x', this.ROT_RADIUS, this.ROT_WIDTH, 0, spanX, getColor('rx', red));
+      if (drawY) addFlatArc('y', this.ROT_RADIUS, this.ROT_WIDTH, 0, spanY, getColor('ry', green));
+      if (drawZ) addFlatArc('z', this.ROT_RADIUS, this.ROT_WIDTH, 0, spanZ, getColor('rz', blue));
     }
 
     this.vertexCount = data.length / 6;
     const vertexArray = new Float32Array(data);
 
-    if (!this.vertexBuffer) {
-      this.vertexBuffer = device.createBuffer({ size: 150000, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    if (!this.vertexBuffer || this.vertexBuffer.size < vertexArray.byteLength) {
+      if (this.vertexBuffer) this.vertexBuffer.destroy();
+      this.vertexBuffer = this.device.createBuffer({ size: vertexArray.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     }
-    if (queue) queue.writeBuffer(this.vertexBuffer, 0, vertexArray);
-    else device.queue.writeBuffer(this.vertexBuffer, 0, vertexArray);
+    
+    this.device.queue.writeBuffer(this.vertexBuffer, 0, vertexArray);
   }
 
   private createBuffers(device: GPUDevice, layout: GPUBindGroupLayout): void {
-    this.matrixBuffer = device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.matrixBuffer = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.matrixBindGroup = device.createBindGroup({ layout: layout, entries: [{ binding: 0, resource: { buffer: this.matrixBuffer } }] });
   }
 
-  public updateHover(device: GPUDevice, queue: GPUQueue, newHover: GizmoPart | null): void {
+  public updateHover(_device: GPUDevice, _queue: GPUQueue, newHover: GizmoPart | null): void {
     if (this.isDragging || this.hoveredPart === newHover) return;
     this.hoveredPart = newHover;
-    this.rebuildGeometry(device, queue);
+    this.rebuildGeometry();
   }
 
   private rayBoxIntersect(ro: number[], rd: number[], min: number[], max: number[]): number | null {
@@ -182,21 +200,23 @@ export class GizmoSystem {
     return tmin >= 0 ? tmin : null;
   }
 
+  private rayPlaneIntersect(ro: number[], rd: number[], normal: number[], point: number[]): number | null {
+    const denom = rd[0] * normal[0] + rd[1] * normal[1] + rd[2] * normal[2];
+    if (Math.abs(denom) > 0.000001) {
+      const t = ((point[0] - ro[0]) * normal[0] + (point[1] - ro[1]) * normal[1] + (point[2] - ro[2]) * normal[2]) / denom;
+      if (t >= 0) return t;
+    }
+    return null;
+  }
+
   public hitTest(ray: Ray, camera: SCamera, actor: SActor): GizmoPart | null {
-    const dx = actor.x - camera.actor.x;
-    const dy = actor.y - camera.actor.y;
-    const dz = actor.z - camera.actor.z;
+    const dx = actor.x - camera.actor.x; const dy = actor.y - camera.actor.y; const dz = actor.z - camera.actor.z;
     const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
     const scale = Math.max(dist * 0.025, 0.15);
 
     const localOrigin = [(ray.origin[0]-actor.x)/scale, (ray.origin[1]-actor.y)/scale, (ray.origin[2]-actor.z)/scale];
     const localDir = [ray.direction[0], ray.direction[1], ray.direction[2]];
     
-    // Crear un Ray local temporal para usar intersectPlane
-    const localRay = new Ray();
-    localRay.origin.set(localOrigin);
-    localRay.direction.set(localDir);
-
     let closestT = Infinity;
     let hitPart: GizmoPart | null = null;
 
@@ -206,104 +226,109 @@ export class GizmoSystem {
         if (t !== null && t < closestT) { closestT = t; hitPart = part as GizmoPart; }
       }
     } else if (this.mode === 'rotate') {
-      const hitTolerance = this.ROT_TUBE * 2.0;
+      const hitTolerance = this.ROT_WIDTH * 1.5;
 
-      // Z Ring (XY Plane, Normal [0,0,1])
-      let t = localRay.intersectPlane([0,0,1], [0,0,0]);
-      if (t !== null && t < closestT) {
-        const hitX = localOrigin[0] + localDir[0]*t; const hitY = localOrigin[1] + localDir[1]*t;
-        const d = Math.sqrt(hitX*hitX + hitY*hitY);
-        if (Math.abs(d - this.ROT_RADIUS) <= hitTolerance) { closestT = t; hitPart = 'rz'; }
-      }
+      const checkRing = (axis: 'x'|'y'|'z', normal: number[]) => {
+        // MAGIA ZERO-GC: Usamos matemática pura sin instanciar clases temporales
+        const t = this.rayPlaneIntersect(localOrigin, localDir, normal, [0,0,0]);
+        if (t !== null && t < closestT) {
+          const hx = localOrigin[0] + localDir[0]*t;
+          const hy = localOrigin[1] + localDir[1]*t;
+          const hz = localOrigin[2] + localDir[2]*t;
+          
+          let u = 0, v = 0;
+          if (axis === 'z') { u = hx; v = hy; }
+          if (axis === 'y') { u = hz; v = hx; }
+          if (axis === 'x') { u = hy; v = hz; }
 
-      // Y Ring (XZ Plane, Normal [0,1,0])
-      t = localRay.intersectPlane([0,1,0], [0,0,0]);
-      if (t !== null && t < closestT) {
-        const hitX = localOrigin[0] + localDir[0]*t; const hitZ = localOrigin[2] + localDir[2]*t;
-        const d = Math.sqrt(hitX*hitX + hitZ*hitZ);
-        if (Math.abs(d - this.ROT_RADIUS) <= hitTolerance) { closestT = t; hitPart = 'ry'; }
-      }
+          const d = Math.sqrt(u*u + v*v);
+          if (Math.abs(d - this.ROT_RADIUS) <= hitTolerance) {
+            let angle = Math.atan2(v, u);
+            if (angle < 0) angle += Math.PI * 2;
+            
+            if (this.isDragging || (angle >= 0 && angle <= Math.PI / 2 + 0.1)) {
+              return t;
+            }
+          }
+        }
+        return null;
+      };
 
-      // X Ring (YZ Plane, Normal [1,0,0])
-      t = localRay.intersectPlane([1,0,0], [0,0,0]);
-      if (t !== null && t < closestT) {
-        const hitY = localOrigin[1] + localDir[1]*t; const hitZ = localOrigin[2] + localDir[2]*t;
-        const d = Math.sqrt(hitY*hitY + hitZ*hitZ);
-        if (Math.abs(d - this.ROT_RADIUS) <= hitTolerance) { closestT = t; hitPart = 'rx'; }
-      }
+      const tZ = checkRing('z', [0,0,1]); if (tZ !== null) { closestT = tZ; hitPart = 'rz'; }
+      const tY = checkRing('y', [0,1,0]); if (tY !== null) { closestT = tY; hitPart = 'ry'; }
+      const tX = checkRing('x', [1,0,0]); if (tX !== null) { closestT = tX; hitPart = 'rx'; }
     }
 
     return hitPart;
   }
 
   public beginDrag(ray: Ray, camera: SCamera, actor: SActor): void {
-    if (!this.hoveredPart) return;
-    this.isDragging = true;
-    this.dragStartActorPos = [actor.x, actor.y, actor.z];
-    this.dragPlanePoint = [actor.x, actor.y, actor.z];
+     if (!this.hoveredPart) return;
+     this.isDragging = true;
+     this.dragStartActorPos = [actor.x, actor.y, actor.z];
+     this.dragPlanePoint = [actor.x, actor.y, actor.z];
+     this.dragAxis = [0,0,0];
 
-    const viewDir = [camera.actor.x - actor.x, camera.actor.y - actor.y, camera.actor.z - actor.z];
-    const vl = Math.sqrt(viewDir[0]**2 + viewDir[1]**2 + viewDir[2]**2);
-    if (vl > 0) { viewDir[0]/=vl; viewDir[1]/=vl; viewDir[2]/=vl; }
+     if (this.mode === 'translate') {
+        const viewDir = [camera.actor.x-actor.x, camera.actor.y-actor.y, camera.actor.z-actor.z];
+        const vl = Math.sqrt(viewDir[0]**2 + viewDir[1]**2 + viewDir[2]**2);
+        if (vl > 0) { viewDir[0]/=vl; viewDir[1]/=vl; viewDir[2]/=vl; }
+        
+        if (this.hoveredPart === 'x') { this.dragAxis = [1,0,0]; this.dragPlaneNormal = [0, viewDir[1], viewDir[2]]; }
+        else if (this.hoveredPart === 'y') { this.dragAxis = [0,1,0]; this.dragPlaneNormal = [viewDir[0], 0, viewDir[2]]; }
+        else if (this.hoveredPart === 'z') { this.dragAxis = [0,0,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], 0]; }
+        else if (this.hoveredPart === 'xy') { this.dragAxis = [1,1,0]; this.dragPlaneNormal = [0,0,1]; }
+        else if (this.hoveredPart === 'xz') { this.dragAxis = [1,0,1]; this.dragPlaneNormal = [0,1,0]; }
+        else if (this.hoveredPart === 'yz') { this.dragAxis = [0,1,1]; this.dragPlaneNormal = [1,0,0]; }
+        else if (this.hoveredPart === 'center') { this.dragAxis = [1,1,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], viewDir[2]]; }
+     } else if (this.mode === 'rotate') {
+        // En rotación, el plano de arrastre es literalmente el plano del aro
+        if (this.hoveredPart === 'rx') { this.dragPlaneNormal = [1,0,0]; }
+        else if (this.hoveredPart === 'ry') { this.dragPlaneNormal = [0,1,0]; }
+        else if (this.hoveredPart === 'rz') { this.dragPlaneNormal = [0,0,1]; }
+     }
 
-    this.dragAxis = [0,0,0];
+     const nl = Math.sqrt(this.dragPlaneNormal[0]**2 + this.dragPlaneNormal[1]**2 + this.dragPlaneNormal[2]**2);
+     if (nl > 0) { this.dragPlaneNormal[0]/=nl; this.dragPlaneNormal[1]/=nl; this.dragPlaneNormal[2]/=nl; }
 
-    // Construir el Plano Virtual Perpendicular a la vista pero alineado al Eje
-    if (this.hoveredPart === 'x') { this.dragAxis = [1,0,0]; this.dragPlaneNormal = [0, viewDir[1], viewDir[2]]; }
-    else if (this.hoveredPart === 'y') { this.dragAxis = [0,1,0]; this.dragPlaneNormal = [viewDir[0], 0, viewDir[2]]; }
-    else if (this.hoveredPart === 'z') { this.dragAxis = [0,0,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], 0]; }
-    else if (this.hoveredPart === 'xy') { this.dragAxis = [1,1,0]; this.dragPlaneNormal = [0,0,1]; }
-    else if (this.hoveredPart === 'xz') { this.dragAxis = [1,0,1]; this.dragPlaneNormal = [0,1,0]; }
-    else if (this.hoveredPart === 'yz') { this.dragAxis = [0,1,1]; this.dragPlaneNormal = [1,0,0]; }
-    else if (this.hoveredPart === 'center') { this.dragAxis = [1,1,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], viewDir[2]]; }
+     const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
+     if (t !== null) {
+       this.dragOffset = [ (ray.origin[0]+ray.direction[0]*t)-actor.x, (ray.origin[1]+ray.direction[1]*t)-actor.y, (ray.origin[2]+ray.direction[2]*t)-actor.z ];
+     }
 
-    const nl = Math.sqrt(this.dragPlaneNormal[0]**2 + this.dragPlaneNormal[1]**2 + this.dragPlaneNormal[2]**2);
-    if (nl > 0) { this.dragPlaneNormal[0]/=nl; this.dragPlaneNormal[1]/=nl; this.dragPlaneNormal[2]/=nl; }
-
-    const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
-    if (t !== null) {
-      this.dragOffset = [
-        (ray.origin[0] + ray.direction[0] * t) - actor.x,
-        (ray.origin[1] + ray.direction[1] * t) - actor.y,
-        (ray.origin[2] + ray.direction[2] * t) - actor.z
-      ];
-    }
+     // ACTUALIZAR VISUALMENTE PARA MOSTRAR LOS 360 GRADOS
+     this.rebuildGeometry();
   }
 
   public updateDrag(ray: Ray, actor: SActor, snapEnabled: boolean = false, snapValue: number = 0): void {
-    if (!this.isDragging) return;
-    const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
-    if (t !== null) {
-      const hitX = ray.origin[0] + ray.direction[0] * t;
-      const hitY = ray.origin[1] + ray.direction[1] * t;
-      const hitZ = ray.origin[2] + ray.direction[2] * t;
-
-      let newX = hitX - this.dragOffset[0]; 
-      let newY = hitY - this.dragOffset[1]; 
-      let newZ = hitZ - this.dragOffset[2];
-
-      // Restricción matemática estricta a los ejes permitidos
-      if (this.dragAxis[0] === 0) newX = this.dragStartActorPos[0];
-      if (this.dragAxis[1] === 0) newY = this.dragStartActorPos[1];
-      if (this.dragAxis[2] === 0) newZ = this.dragStartActorPos[2];
-
-      // Aplicar Grid Snapping si está habilitado
-      if (snapEnabled && snapValue > 0) {
-        if (this.dragAxis[0] !== 0) newX = Math.round(newX / snapValue) * snapValue;
-        if (this.dragAxis[1] !== 0) newY = Math.round(newY / snapValue) * snapValue;
-        if (this.dragAxis[2] !== 0) newZ = Math.round(newZ / snapValue) * snapValue;
-      }
-
-      actor.setPosition(newX, newY, newZ);
-    }
+     if (!this.isDragging) return;
+     if (this.mode === 'translate') {
+         const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
+         if (t !== null) {
+           const hitX = ray.origin[0] + ray.direction[0]*t; const hitY = ray.origin[1] + ray.direction[1]*t; const hitZ = ray.origin[2] + ray.direction[2]*t;
+           let newX = hitX - this.dragOffset[0]; let newY = hitY - this.dragOffset[1]; let newZ = hitZ - this.dragOffset[2];
+           if (this.dragAxis[0] === 0) newX = this.dragStartActorPos[0]; if (this.dragAxis[1] === 0) newY = this.dragStartActorPos[1]; if (this.dragAxis[2] === 0) newZ = this.dragStartActorPos[2];
+           if (snapEnabled && snapValue > 0) {
+             if (this.dragAxis[0] !== 0) newX = Math.round(newX / snapValue) * snapValue;
+             if (this.dragAxis[1] !== 0) newY = Math.round(newY / snapValue) * snapValue;
+             if (this.dragAxis[2] !== 0) newZ = Math.round(newZ / snapValue) * snapValue;
+           }
+           actor.setPosition(newX, newY, newZ);
+         }
+     }
   }
 
-  public endDrag(): void { this.isDragging = false; }
+  public endDrag(): void { 
+      this.isDragging = false; 
+      // DEVOLVER AL TRIANGULO DE 1/4
+      this.rebuildGeometry();
+  }
 
   public update(queue: GPUQueue, selectedActor: SActor | null): void {
     if (!selectedActor || !this.matrixBuffer) return;
     SMat4.identity(this.gizmoMatrix);
     this.gizmoMatrix[12] = selectedActor.x; this.gizmoMatrix[13] = selectedActor.y; this.gizmoMatrix[14] = selectedActor.z;
+    this.gizmoMatrix[16] = 0.0; // Desactivar configuraciones de shader especiales
     queue.writeBuffer(this.matrixBuffer, 0, this.gizmoMatrix);
   }
 
