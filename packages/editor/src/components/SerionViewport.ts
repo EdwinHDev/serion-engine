@@ -55,6 +55,7 @@ export class SerionViewport extends HTMLElement {
         let snapE = false; let snapV = 0;
         if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
         else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
+        else if (EditorState.transformMode === 'scale') { snapE = EditorState.snapScaleEnabled; snapV = EditorState.snapScaleValue; }
 
         this.engine.updateGizmoDrag(ndcX, ndcY, snapE, snapV);
         
@@ -89,6 +90,7 @@ export class SerionViewport extends HTMLElement {
           let snapE = false; let snapV = 0;
           if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
           else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
+          else if (EditorState.transformMode === 'scale') { snapE = EditorState.snapScaleEnabled; snapV = EditorState.snapScaleValue; }
           
           this.engine.beginGizmoDrag(ndcX, ndcY, snapE, snapV);
           return; 
