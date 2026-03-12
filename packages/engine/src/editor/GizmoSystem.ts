@@ -24,6 +24,7 @@ export class GizmoSystem {
   public accumulatedAngle = 0;
   public currentDeltaAngle = 0;
   public dragStartActorRot = [0, 0, 0, 1]; // Ahora almacena X, Y, Z, W
+  public dragStartActorScale = [1, 1, 1];
 
   public currentSnapEnabled = false;
   public currentSnapValue = 0;
@@ -87,56 +88,57 @@ export class GizmoSystem {
 
     const getColor = (part: GizmoPart, defaultColor: number[]) => this.hoveredPart === part ? yellow : defaultColor;
 
+    // --- GEOMETRY HELPERS ---
+    const addCylinder = (axis: 'x' | 'y' | 'z', length: number, radius: number, color: number[]) => {
+      const segments = 12;
+      for (let i = 0; i < segments; i++) {
+        const t1 = (i / segments) * Math.PI * 2; const t2 = ((i + 1) / segments) * Math.PI * 2;
+        const c1 = Math.cos(t1) * radius; const s1 = Math.sin(t1) * radius;
+        const c2 = Math.cos(t2) * radius; const s2 = Math.sin(t2) * radius;
+        const getP = (d: number, u: number, v: number) => axis === 'x' ? [d, u, v] : axis === 'y' ? [u, d, v] : [u, v, d];
+        const p1 = getP(0, c1, s1); const p2 = getP(0, c2, s2); const p3 = getP(length, c1, s1); const p4 = getP(length, c2, s2);
+        pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(p3[0], p3[1], p3[2], color);
+        pushV(p2[0], p2[1], p2[2], color); pushV(p4[0], p4[1], p4[2], color); pushV(p3[0], p3[1], p3[2], color);
+      }
+    };
+
+    const addCone = (axis: 'x' | 'y' | 'z', offset: number, height: number, radius: number, color: number[]) => {
+      const segments = 12;
+      for (let i = 0; i < segments; i++) {
+        const t1 = (i / segments) * Math.PI * 2; const t2 = ((i + 1) / segments) * Math.PI * 2;
+        const c1 = Math.cos(t1) * radius; const s1 = Math.sin(t1) * radius;
+        const c2 = Math.cos(t2) * radius; const s2 = Math.sin(t2) * radius;
+        const getP = (d: number, u: number, v: number) => axis === 'x' ? [d, u, v] : axis === 'y' ? [u, d, v] : [u, v, d];
+        const p1 = getP(offset, c1, s1); const p2 = getP(offset, c2, s2);
+        const tip = getP(offset + height, 0, 0); const center = getP(offset, 0, 0);
+        pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(tip[0], tip[1], tip[2], color);
+        pushV(p2[0], p2[1], p2[2], color); pushV(p1[0], p1[1], p1[2], color); pushV(center[0], center[1], center[2], color);
+      }
+    };
+
+    const addPlane = (a1: 'x' | 'y' | 'z', a2: 'x' | 'y' | 'z', offset: number, size: number, color: number[]) => {
+      const p1 = [0, 0, 0], p2 = [0, 0, 0], p3 = [0, 0, 0], p4 = [0, 0, 0];
+      const set = (p: number[], a: string, v: number) => { if (a === 'x') p[0] = v; else if (a === 'y') p[1] = v; else p[2] = v; };
+      set(p1, a1, offset); set(p1, a2, offset); set(p2, a1, offset + size); set(p2, a2, offset);
+      set(p3, a1, offset + size); set(p3, a2, offset + size); set(p4, a1, offset); set(p4, a2, offset + size);
+      pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(p3[0], p3[1], p3[2], color);
+      pushV(p1[0], p1[1], p1[2], color); pushV(p3[0], p3[1], p3[2], color); pushV(p4[0], p4[1], p4[2], color);
+      pushV(p1[0], p1[1], p1[2], color); pushV(p3[0], p3[1], p3[2], color); pushV(p2[0], p2[1], p2[2], color);
+      pushV(p1[0], p1[1], p1[2], color); pushV(p4[0], p4[1], p4[2], color); pushV(p3[0], p3[1], p3[2], color);
+    };
+
+    const addBox = (min: number, max: number, c: number[]) => {
+      const v = [[min, min, max], [max, min, max], [max, max, max], [min, max, max], [min, min, min], [min, max, min], [max, max, min], [max, min, min], [min, max, min], [min, max, max], [max, max, max], [max, max, min], [min, min, min], [max, min, min], [max, min, max], [min, min, max], [max, min, min], [max, max, min], [max, max, max], [max, min, max], [min, min, min], [min, min, max], [min, max, max], [min, max, min]];
+      const idx = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11, 12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23];
+      for (const i of idx) pushV(v[i][0], v[i][1], v[i][2], c);
+    };
+
     if (this.mode === 'translate') {
       const SCALE = 1.0;
       const stemRadius = 0.12 * SCALE; const stemLength = 5.0 * SCALE;
       const coneRadius = 0.45 * SCALE; const coneHeight = 1.5 * SCALE;
       const planeSize = 1.2 * SCALE; const planeOffset = 1.5 * SCALE;
       const centerSize = 0.3 * SCALE;
-
-      const addCylinder = (axis: 'x' | 'y' | 'z', length: number, radius: number, color: number[]) => {
-        const segments = 12;
-        for (let i = 0; i < segments; i++) {
-          const t1 = (i / segments) * Math.PI * 2; const t2 = ((i + 1) / segments) * Math.PI * 2;
-          const c1 = Math.cos(t1) * radius; const s1 = Math.sin(t1) * radius;
-          const c2 = Math.cos(t2) * radius; const s2 = Math.sin(t2) * radius;
-          const getP = (d: number, u: number, v: number) => axis === 'x' ? [d, u, v] : axis === 'y' ? [u, d, v] : [u, v, d];
-          const p1 = getP(0, c1, s1); const p2 = getP(0, c2, s2); const p3 = getP(length, c1, s1); const p4 = getP(length, c2, s2);
-          pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(p3[0], p3[1], p3[2], color);
-          pushV(p2[0], p2[1], p2[2], color); pushV(p4[0], p4[1], p4[2], color); pushV(p3[0], p3[1], p3[2], color);
-        }
-      };
-
-      const addCone = (axis: 'x' | 'y' | 'z', offset: number, height: number, radius: number, color: number[]) => {
-        const segments = 12;
-        for (let i = 0; i < segments; i++) {
-          const t1 = (i / segments) * Math.PI * 2; const t2 = ((i + 1) / segments) * Math.PI * 2;
-          const c1 = Math.cos(t1) * radius; const s1 = Math.sin(t1) * radius;
-          const c2 = Math.cos(t2) * radius; const s2 = Math.sin(t2) * radius;
-          const getP = (d: number, u: number, v: number) => axis === 'x' ? [d, u, v] : axis === 'y' ? [u, d, v] : [u, v, d];
-          const p1 = getP(offset, c1, s1); const p2 = getP(offset, c2, s2);
-          const tip = getP(offset + height, 0, 0); const center = getP(offset, 0, 0);
-          pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(tip[0], tip[1], tip[2], color);
-          pushV(p2[0], p2[1], p2[2], color); pushV(p1[0], p1[1], p1[2], color); pushV(center[0], center[1], center[2], color);
-        }
-      };
-
-      const addPlane = (a1: 'x' | 'y' | 'z', a2: 'x' | 'y' | 'z', offset: number, size: number, color: number[]) => {
-        const p1 = [0, 0, 0], p2 = [0, 0, 0], p3 = [0, 0, 0], p4 = [0, 0, 0];
-        const set = (p: number[], a: string, v: number) => { if (a === 'x') p[0] = v; else if (a === 'y') p[1] = v; else p[2] = v; };
-        set(p1, a1, offset); set(p1, a2, offset); set(p2, a1, offset + size); set(p2, a2, offset);
-        set(p3, a1, offset + size); set(p3, a2, offset + size); set(p4, a1, offset); set(p4, a2, offset + size);
-        pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(p3[0], p3[1], p3[2], color);
-        pushV(p1[0], p1[1], p1[2], color); pushV(p3[0], p3[1], p3[2], color); pushV(p4[0], p4[1], p4[2], color);
-        pushV(p1[0], p1[1], p1[2], color); pushV(p3[0], p3[1], p3[2], color); pushV(p2[0], p2[1], p2[2], color);
-        pushV(p1[0], p1[1], p1[2], color); pushV(p4[0], p4[1], p4[2], color); pushV(p3[0], p3[1], p3[2], color);
-      };
-
-      const addBox = (min: number, max: number, c: number[]) => {
-        const v = [[min, min, max], [max, min, max], [max, max, max], [min, max, max], [min, min, min], [min, max, min], [max, max, min], [max, min, min], [min, max, min], [min, max, max], [max, max, max], [max, max, min], [min, min, min], [max, min, min], [max, min, max], [min, min, max], [max, min, min], [max, max, min], [max, max, max], [max, min, max], [min, min, min], [min, min, max], [min, max, max], [min, max, min]];
-        const idx = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11, 12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23];
-        for (const i of idx) pushV(v[i][0], v[i][1], v[i][2], c);
-      };
 
       addCylinder('x', stemLength, stemRadius, getColor('x', red)); addCone('x', stemLength, coneHeight, coneRadius, getColor('x', red));
       addCylinder('y', stemLength, stemRadius, getColor('y', green)); addCone('y', stemLength, coneHeight, coneRadius, getColor('y', green));
@@ -277,6 +279,44 @@ export class GizmoSystem {
         addPointer(activeAxis, this.ROT_RADIUS, this.dragStartAngle, white); // Origen
         addPointer(activeAxis, this.ROT_RADIUS, this.dragStartAngle + visualDelta, yellow); // Actual
       }
+    } else if (this.mode === 'scale') {
+      const SCALE = 1.0;
+      const stemRadius = 0.12 * SCALE; const stemLength = 5.0 * SCALE;
+      const boxRadius = 0.4 * SCALE; // Tamaño de los cubitos de los extremos
+      const planeOffset = 1.5 * SCALE; const planeSize = 1.2 * SCALE;
+      const centerSize = 0.5 * SCALE; // Cubo central un poco más grande para escala uniforme
+
+      const addTipBox = (axis: 'x' | 'y' | 'z', offset: number, size: number, color: number[]) => {
+        const getP = (d: number, u: number, v: number) => axis === 'x' ? [d, u, v] : axis === 'y' ? [u, d, v] : [u, v, d];
+        const v = [
+          getP(offset - size, -size, -size), getP(offset + size, -size, -size), getP(offset + size, size, -size), getP(offset - size, size, -size),
+          getP(offset - size, -size, size), getP(offset + size, -size, size), getP(offset + size, size, size), getP(offset - size, size, size)
+        ];
+        const idx = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+        for (const i of idx) pushV(v[i][0], v[i][1], v[i][2], color);
+      };
+
+      const addPlaneTri = (a1: 'x' | 'y' | 'z', a2: 'x' | 'y' | 'z', offset: number, size: number, color: number[]) => {
+        const p1 = [0, 0, 0], p2 = [0, 0, 0], p3 = [0, 0, 0];
+        const set = (p: number[], a: string, v: number) => { if (a === 'x') p[0] = v; else if (a === 'y') p[1] = v; else p[2] = v; };
+        set(p1, a1, offset + size); set(p1, a2, offset);
+        set(p2, a1, offset); set(p2, a2, offset + size);
+        set(p3, a1, offset); set(p3, a2, offset);
+        pushV(p1[0], p1[1], p1[2], color); pushV(p2[0], p2[1], p2[2], color); pushV(p3[0], p3[1], p3[2], color);
+        pushV(p1[0], p1[1], p1[2], color); pushV(p3[0], p3[1], p3[2], color); pushV(p2[0], p2[1], p2[2], color);
+      };
+
+      const addCenterBox = (size: number, color: number[]) => {
+        const v = [[-size, -size, -size], [size, -size, -size], [size, size, -size], [-size, size, -size], [-size, -size, size], [size, -size, size], [size, size, size], [-size, size, size]];
+        const idx = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+        for (const i of idx) pushV(v[i][0], v[i][1], v[i][2], color);
+      };
+
+      addCylinder('x', stemLength, stemRadius, getColor('x', red)); addTipBox('x', stemLength, boxRadius, getColor('x', red));
+      addCylinder('y', stemLength, stemRadius, getColor('y', green)); addTipBox('y', stemLength, boxRadius, getColor('y', green));
+      addCylinder('z', stemLength, stemRadius, getColor('z', blue)); addTipBox('z', stemLength, boxRadius, getColor('z', blue));
+      addPlaneTri('x', 'y', planeOffset, planeSize, getColor('xy', blue)); addPlaneTri('x', 'z', planeOffset, planeSize, getColor('xz', green)); addPlaneTri('y', 'z', planeOffset, planeSize, getColor('yz', red));
+      addCenterBox(centerSize, getColor('center', white));
     }
 
     this.vertexCount = data.length / 6;
@@ -336,7 +376,7 @@ export class GizmoSystem {
     let closestT = Infinity;
     let hitPart: GizmoPart | null = null;
 
-    if (this.mode === 'translate') {
+    if (this.mode === 'translate' || this.mode === 'scale') {
       for (const [part, box] of Object.entries(this.hitBoxes)) {
         const t = this.rayBoxIntersect(localOrigin, localDir, box.min, box.max);
         if (t !== null && t < closestT) { closestT = t; hitPart = part as GizmoPart; }
@@ -384,6 +424,7 @@ export class GizmoSystem {
     this.currentSnapEnabled = snapEnabled;
     this.currentSnapValue = snapValue;
     this.dragStartActorPos = [actor.x, actor.y, actor.z];
+    this.dragStartActorScale = [actor.scaleX || 1, actor.scaleY || 1, actor.scaleZ || 1];
     this.dragStartActorRot = [
       actor.rotationX || 0,
       actor.rotationY || 0,
@@ -394,7 +435,7 @@ export class GizmoSystem {
     this.dragAxis = [0, 0, 0];
     this.currentDeltaAngle = 0;
 
-    if (this.mode === 'translate') {
+    if (this.mode === 'translate' || this.mode === 'scale') {
       const viewDir = [camera.actor.x - actor.x, camera.actor.y - actor.y, camera.actor.z - actor.z];
       const vl = Math.sqrt(viewDir[0] ** 2 + viewDir[1] ** 2 + viewDir[2] ** 2);
       if (vl > 0) { viewDir[0] /= vl; viewDir[1] /= vl; viewDir[2] /= vl; }
@@ -419,7 +460,8 @@ export class GizmoSystem {
     if (t !== null) {
       const hitX = ray.origin[0] + ray.direction[0] * t; const hitY = ray.origin[1] + ray.direction[1] * t; const hitZ = ray.origin[2] + ray.direction[2] * t;
 
-      if (this.mode === 'translate') {
+      // FIX CRÍTICO: Capturar el offset inicial también para la escala
+      if (this.mode === 'translate' || this.mode === 'scale') {
         this.dragOffset = [hitX - actor.x, hitY - actor.y, hitZ - actor.z];
       } else if (this.mode === 'rotate') {
         const dx = hitX - actor.x; const dy = hitY - actor.y; const dz = hitZ - actor.z;
@@ -468,6 +510,46 @@ export class GizmoSystem {
           if (this.dragAxis[2] !== 0) newZ = Math.round(newZ / snapValue) * snapValue;
         }
         actor.setPosition(newX, newY, newZ);
+      } else if (this.mode === 'scale') {
+        const hitX = ray.origin[0] + ray.direction[0] * t;
+        const hitY = ray.origin[1] + ray.direction[1] * t;
+        const hitZ = ray.origin[2] + ray.direction[2] * t;
+
+        // Matemática Unreal: Proporción geométrica sobre los ejes activos
+        let startD = 0; let currentD = 0;
+        if (this.dragAxis[0] !== 0) { startD += this.dragOffset[0] ** 2; currentD += (hitX - actor.x) ** 2; }
+        if (this.dragAxis[1] !== 0) { startD += this.dragOffset[1] ** 2; currentD += (hitY - actor.y) ** 2; }
+        if (this.dragAxis[2] !== 0) { startD += this.dragOffset[2] ** 2; currentD += (hitZ - actor.z) ** 2; }
+
+        startD = Math.sqrt(startD);
+        currentD = Math.sqrt(currentD);
+
+        let multiplier = startD > 0.0001 ? (currentD / startD) : 1.0;
+
+        // Detectar inversión (Escala Negativa / Espejo) si se tira del eje hacia atrás
+        let sign = 1;
+        if (this.hoveredPart === 'x') sign = Math.sign((hitX - actor.x) * this.dragOffset[0]);
+        else if (this.hoveredPart === 'y') sign = Math.sign((hitY - actor.y) * this.dragOffset[1]);
+        else if (this.hoveredPart === 'z') sign = Math.sign((hitZ - actor.z) * this.dragOffset[2]);
+
+        multiplier *= (sign === 0 ? 1 : sign);
+
+        // Aplicar Imán de Escala (Snapping)
+        if (snapEnabled && snapValue > 0) {
+          multiplier = Math.round(multiplier / snapValue) * snapValue;
+          // Evitar que colapse exactamente a 0 absoluto para no destruir la matriz
+          if (Math.abs(multiplier) < 0.001) multiplier = snapValue > 0.001 ? snapValue : 0.001;
+        }
+
+        const newScaleX = this.dragStartActorScale[0] * (this.dragAxis[0] !== 0 ? multiplier : 1.0);
+        const newScaleY = this.dragStartActorScale[1] * (this.dragAxis[1] !== 0 ? multiplier : 1.0);
+        const newScaleZ = this.dragStartActorScale[2] * (this.dragAxis[2] !== 0 ? multiplier : 1.0);
+
+        if (actor.setScale) {
+          actor.setScale(newScaleX, newScaleY, newScaleZ);
+        } else {
+          (actor as any).scaleX = newScaleX; (actor as any).scaleY = newScaleY; (actor as any).scaleZ = newScaleZ;
+        }
       } else if (this.mode === 'rotate') {
         const dx = hitX - actor.x; const dy = hitY - actor.y; const dz = hitZ - actor.z;
         let u = 0, v = 0;
