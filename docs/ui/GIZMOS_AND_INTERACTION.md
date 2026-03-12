@@ -1,74 +1,74 @@
 # Serion Engine - Gizmos & Interaction Architecture
-## ID: SER-09-GIZMOS | Estado: Activo
+## ID: SER-09-GIZMOS | Estado: Activo | Revisión: AAA Standard
 
 ### 1. Visión General (The Unreal Standard)
-En Serion Engine, los **Gizmos** (Manipuladores de Transformación) son la principal interfaz táctil entre el usuario y el mundo 3D. No son simples modelos decorativos; son herramientas matemáticas de precisión diseñadas para replicar exactamente el comportamiento, la visualización y la sensación de **Unreal Engine**.
+En Serion Engine, los **Gizmos** (Manipuladores de Transformación) son la principal interfaz táctil entre el usuario y el mundo 3D. No son simples modelos decorativos; son herramientas matemáticas de alta precisión diseñadas para replicar exactamente el comportamiento, la visualización y la sensación táctil de **Unreal Engine**.
 
-Los Gizmos operan bajo reglas de renderizado exclusivas (aislados de la iluminación PBR y el Post-Procesado) y responden a un sistema de selección matemática (Raycasting) ultra-optimizado.
-
----
-
-### 2. Los Tres Gizmos Fundamentales
-
-El motor soporta tres herramientas de manipulación, cada una con sub-elementos interactivos que se iluminan (amarillo brillante) al hacer *Hover*.
-
-#### 2.1 Translation Gizmo (Traslación)
-Permite mover un objeto en el espacio 3D a lo largo de vectores rectos.
-* **Componentes Visuales:**
-  * **Flechas (1 Eje):** Rojo (X), Verde (Y), Azul (Z). Mueven el objeto en una línea estricta.
-  * **Cuadrados Internos (2 Ejes):** Planos XY, XZ, YZ. Mueven el objeto libremente sobre una "pared" invisible plana.
-  * **Esfera Central:** Movimiento relativo a los ejes X/Y de la cámara actual (Screen-Space).
-* **Física de Arrastre:** Utiliza la intersección *Rayo-Plano* para garantizar que el movimiento del ratón se proyecte con precisión milimétrica sobre el eje seleccionado.
-
-#### 2.2 Rotation Gizmo (Rotación)
-Permite girar un objeto alrededor de un vector normal.
-* **Componentes Visuales:**
-  * **Aros (Toroides):** Rojo (Pitch/Y), Verde (Roll/X), Azul (Yaw/Z) respetando el sistema **Z-Up**. Para evitar saturación visual, solo se dibuja el semi-arco frontal hacia la cámara.
-* **Comportamiento Dinámico (Procedural):**
-  * Al hacer clic en un eje, los demás desaparecen.
-  * El aro seleccionado se completa inmediatamente formando un círculo de 360°.
-  * A medida que se arrastra el ratón, el sistema genera proceduralmente un **Gajo Geométrico (Pie Wedge)** semitransparente desde el centro hasta el cursor, rellenando el ángulo exacto recorrido para dar retroalimentación visual directa.
-
-#### 2.3 Scale Gizmo (Escalado)
-Permite modificar el tamaño del objeto (uniforme o no uniforme).
-* **Componentes Visuales:**
-  * **Ejes con Cubos:** Escalan el objeto estirándolo o aplastándolo en una sola dirección.
-  * **Triángulos de Conexión:** Escalan en dos ejes simultáneamente.
-  * **Cubo Blanco Central:** Escala uniforme absoluta (X, Y, Z crecen al mismo ritmo).
+Los Gizmos operan bajo reglas de renderizado exclusivas (aislados de la iluminación PBR) y responden a un sistema de selección matemática (Raycasting) ultra-optimizado y libre de recolección de basura (Zero-GC).
 
 ---
 
-### 3. El Espacio de Trabajo (Coordinate Space)
+### 2. Arquitectura de Interfaz y Estado (Decoupling)
 
-Todo Gizmo debe ser capaz de operar en dos regímenes de transformación, alternables desde la UI del Editor:
-1. **World Space (Absoluto):** Las flechas del Gizmo siempre apuntan a los ejes absolutos del universo (El Z azul siempre apunta al cielo), ignorando por completo la rotación actual del actor.
-2. **Local Space (Relativo):** El Gizmo hereda la rotación del Actor. (Ej. Si un coche está volcado de lado, el eje Z azul apuntará en la dirección del techo del coche, no hacia el cielo del mundo).
+Para mantener el motor de renderizado puro y agnóstico a la web, el sistema de transformación se divide en tres pilares:
 
----
+#### 2.1 EditorState (El Cerebro)
+Es la Única Fuente de Verdad (Single Source of Truth). Almacena el modo actual (`translate`, `rotate`, `scale`), el espacio de coordenadas (`world`, `local`) y la configuración exacta de los imanes (Snapping) para cada herramienta.
+* **Seguridad de Navegación:** Contiene el estado `isNavigating`. Si el usuario mantiene pulsado el clic derecho para volar por la escena, el `MenuManager` bloquea automáticamente todos los atajos de teclado (Q, W, E, R) para evitar cambios accidentales de herramienta.
 
-### 4. Arquitectura de Renderizado (El Esqueleto Visual)
+#### 2.2 SerionViewportOverlay (La Interfaz Táctica)
+Un Web Component translúcido flotante (Top-Right, 10px offset). Es puramente reactivo: escucha los eventos globales del `EditorState` para iluminar sus iconos en azul (`--serion-accent`). Contiene los selectores de herramientas, el toggle de espacio y los dropdowns nativos con los valores exactos de Snapping (ej. 15°, 10cm, 0.25x).
 
-Los Gizmos **no son `SStaticMesh` normales**. Pertenecen a un pase de renderizado privilegiado y deben cumplir 3 leyes inquebrantables:
-
-1. **Inmunidad a la Perspectiva (Constant Screen Size):** El Vertex Shader del Gizmo anula la compresión de la distancia. Si la cámara se aleja 5 kilómetros, el multiplicador de escala (`W`) aumenta proporcionalmente para que el Gizmo siempre ocupe la misma cantidad de píxeles en el monitor del usuario.
-2. **Inmunidad al Entorno (Unlit Shader):** El Gizmo no reacciona al Sol, Sombras, Oclusión (SSAO) ni a la Atmósfera. Emite colores matemáticos puros (X=1,0,0 / Y=0,1,0 / Z=0,0,1).
-3. **Superposición (Z-Buffer Clearing):** Justo antes de dibujar el Gizmo, el RHI ejecuta un `Depth Clear` (limpia el búfer de profundidad a `1.0`). Esto garantiza que el Gizmo se dibuje *a través* de las paredes y por encima del objeto, pero manteniendo la profundidad relativa entre sus propias piezas (la flecha Y no puede tapar a la flecha X si está detrás).
+#### 2.3 Inyección Pasiva de Dependencias
+El Motor (`SerionEngine`) jamás importa archivos de la UI. El Viewport extrae los valores de snapping del `EditorState` y se los inyecta pasivamente al motor como parámetros en cada frame durante el evento `mousemove`: `updateGizmoDrag(ndcX, ndcY, snapEnabled, snapValue)`.
 
 ---
 
-### 5. Sistema de Interacción (Zero-GC Raycasting)
+### 3. Los Tres Gizmos Fundamentales y su Física
 
-Para evitar los "Hit Proxies" (leer colores de píxeles) que consumen ancho de banda de VRAM, la selección se hace puramente con matemáticas de CPU.
+#### 3.1 Translation Gizmo (Traslación)
+Permite mover un objeto en el espacio 3D a lo largo de vectores rectos o planos.
+* **Geometría:** Cilindros rematados con conos (1 eje), triángulos invisibles (2 ejes) y una caja central.
+* **Física de Arrastre:** Utiliza intersección analítica *Rayo-Plano* (`rayPlaneIntersect`).
+* **Snapping:** Aplica un redondeo matemático estricto (`Math.round(val / snap) * snap`) sobre el vector de desplazamiento relativo al punto de anclaje inicial.
 
-1. **Rayo Analítico:** El Viewport captura el clic 2D del ratón, lo convierte en coordenadas NDC (-1 a 1) y le pide a la `SCamera` que desproyecte un `Ray` (Origen y Dirección) hacia el mundo 3D.
-2. **Sub-Picking Matemático:** El Motor no comprueba contra AABBs de caja. Utiliza algoritmos analíticos estrictos (Intersección Rayo-Cilindro para las flechas, Rayo-Toroide para los aros, y Rayo-Caja para los centros).
-3. **Zero-Garbage Collection:** Durante la fase de arrastre (`mousemove`), todas las proyecciones vectoriales utilizan Float32Arrays cacheados (`SMat4`, `SVec3`). **Prohibido instanciar objetos con `new` en la función de arrastre**.
+#### 3.2 Rotation Gizmo (Rotación) - *High Precision Tool*
+Permite girar un objeto alrededor de un vector normal. Es la herramienta más compleja del motor, generada 100% de forma procedural.
+* **Geometría de Reposo (Octante):** Para evitar saturación visual, dibuja 3 "Cintas Planas" (Flat Ribbons) de exactamente 90 grados (1/4 de círculo) formando un triángulo rígido entre los ejes X, Y, Z.
+* **Geometría Dinámica (Drag State):**
+    * Al arrastrar, los ejes inactivos desaparecen y el eje activo completa su geometría a 360°.
+    * **El Abanico (Pie Wedge):** Se dibuja proceduralmente un polígono semitransparente que rellena el ángulo recorrido. Su radio es un 4% menor al del aro principal para dejar un *Gap* oscuro y evitar Z-Fighting.
+    * **Precision Overlays:** Si el imán está activo, se genera un Transportador visual (líneas de marca a lo largo del aro). Dos triángulos indicadores señalan el punto de origen y el ángulo actual.
+    * **HTML Tooltip:** Un elemento del DOM sigue al ratón mostrando los grados normalizados (módulo 360°) y el conteo de vueltas (`turns`).
+* **Física y Matemática Crítica:**
+    * **Zero-GC Radial Picking:** La detección de clics no usa cajas. Calcula la intersección del rayo contra el plano del aro y verifica si la distancia radial coincide con el radio del Gizmo.
+    * **Anti-Flipping (Ángulo Continuo):** Acumula el delta del ángulo de forma continua para evadir el salto de $-\pi$ a $\pi$ de `Math.atan2`, permitiendo rotaciones infinitas.
+    * **Anti-Scale (Cuaterniones):** El Delta Angle jamás se aplica directamente a las propiedades Euler del Actor. Se convierte en un Cuaternión Delta que se multiplica por el Cuaternión Inicial (`q_new = q_delta * q_start`). Esto garantiza que la matriz de rotación jamás se desnormalice, evitando que el objeto se escale o deforme al rotar.
+    * **Absolute Origin Snap:** Al hacer clic con el imán activo, el ángulo inicial se ancla automáticamente al múltiplo más cercano para que los indicadores visuales coincidan perfectamente con la regla dibujada.
+
+#### 3.3 Scale Gizmo (Escalado)
+Permite modificar el tamaño del objeto.
+* **Geometría:** Similar a la traslación, pero reemplazando los conos por Cubos. Posee un cubo central más masivo para la escala uniforme absoluta.
+* **Física y Matemática Crítica (Geometric Ratio):**
+    * A diferencia de la traslación (que suma distancias), la escala utiliza **Proporciones Geométricas** (`Multiplicador = Distancia Actual / Distancia Inicial`). Esto evita picos catastróficos de tamaño en el primer frame.
+    * **Negative Scaling (Mirror):** Multiplica el resultado por la proyección del signo sobre el vector de desplazamiento. Si el ratón cruza el origen central hacia atrás, el objeto se invierte (escala negativa), replicando el comportamiento de espejado de Unreal.
 
 ---
 
-### 6. Desacoplamiento (UI vs Engine)
+### 4. Arquitectura de Renderizado y Memoria
 
-Respetando la arquitectura de eventos:
-* El Motor (`SerionEngine`) no "pinta" la interfaz. Solo recibe coordenadas `(NDC_X, NDC_Y)` y devuelve deltas de transformación.
-* La UI (`SerionViewport`) captura el ratón, activa el flag de "Arrastre de Gizmo" y despacha eventos para que el motor actualice la matriz del `SActor` en el `TransformPool`.
-* Cualquier "Snapping" (salto de rejilla, ej. mover de 10cm en 10cm o girar 15°) se calcula antes de aplicar el delta final a la matriz.
+Los Gizmos pertenecen a un pase de renderizado privilegiado y deben cumplir 4 leyes inquebrantables:
+
+1.  **Inmunidad a la Perspectiva (Constant Screen Size):** El Vertex Shader del Gizmo escala la geometría (`scaleFactor = max(dist * 0.025, 0.15)`) para que siempre ocupe la misma cantidad de píxeles en pantalla, sin importar la distancia de la cámara.
+2.  **Inmunidad al Entorno (Unlit Shader):** No reacciona al Sol, Sombras ni Oclusión. Emite colores matemáticos puros.
+3.  **Superposición (Z-Buffer Clearing):** El RHI limpia el búfer de profundidad antes de dibujarlos, garantizando que se vean a través de las paredes pero manteniendo su propia auto-oclusión interna.
+4.  **VRAM Dinámica (Zero-Overflow):** Debido a que la geometría procedural cambia drásticamente (ej. pasar de dibujar 3 aros de 90° a dibujar un anillo completo de 360°, un transportador de 72 marcas y un abanico dinámico), el `GizmoSystem` evalúa en cada frame el tamaño en bytes de los vértices generados. Si supera el buffer actual, destruye el buffer viejo (`destroy()`) y asigna uno nuevo con el tamaño exacto, evitando colapsos de memoria (`Write range does not fit`) y asegurando la máxima eficiencia de la GPU.
+
+---
+
+### 5. Regla de Interacción (Zero-GC Raycasting)
+
+Durante la fase de arrastre (`updateDrag`), que se ejecuta cientos de veces por segundo:
+* **PROHIBIDO** instanciar objetos con `new` (ej. `new Ray()`, `new Float32Array()`).
+* Todas las matemáticas de intersección (como `rayPlaneIntersect`) deben realizarse mediante funciones puras que operen sobre arrays pre-asignados o primitivos `number`.
+* Esto garantiza que el *Garbage Collector* de JavaScript no se active durante la manipulación de objetos, eliminando los micro-tirones (Lag Spikes) y manteniendo el editor a 60+ FPS rocosos.
