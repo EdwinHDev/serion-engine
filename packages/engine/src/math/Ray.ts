@@ -61,4 +61,19 @@ export class Ray {
     if (tmax < 0) return null; // El AABB está detrás del origen del rayo
     return tmin >= 0 ? tmin : tmax; // Si tmin es negativo, el origen está dentro del AABB
   }
+
+  /**
+   * Intersección contra un plano infinito definido por Normal y un Punto.
+   */
+  public intersectPlane(planeNormal: number[] | Float32Array, planePoint: number[] | Float32Array): number | null {
+    const denom = this.direction[0] * planeNormal[0] + this.direction[1] * planeNormal[1] + this.direction[2] * planeNormal[2];
+    if (Math.abs(denom) > Ray.EPSILON) {
+      const px = planePoint[0] - this.origin[0];
+      const py = planePoint[1] - this.origin[1];
+      const pz = planePoint[2] - this.origin[2];
+      const t = (px * planeNormal[0] + py * planeNormal[1] + pz * planeNormal[2]) / denom;
+      if (t >= 0) return t;
+    }
+    return null;
+  }
 }

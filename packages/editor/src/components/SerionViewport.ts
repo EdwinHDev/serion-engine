@@ -10,6 +10,7 @@ export class SerionViewport extends HTMLElement {
   private canvas: HTMLCanvasElement | null = null;
   private engine: SerionEngine = new SerionEngine();
   private statusText: HTMLElement | null = null;
+  private isDraggingGizmo = false;
 
   constructor() {
     super();
@@ -41,54 +42,52 @@ export class SerionViewport extends HTMLElement {
     // Desactivar menú contextual para permitir uso del Click Derecho
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    let isDragging = false;
     this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
-      isDragging = true;
-      
-      // Si el puntero está bloqueado (navegación), no hacemos hover
+      // Si el puntero está bloqueado (navegación), no hacemos nada de Gizmos
       if (document.pointerLockElement) return;
 
-      const rect = this.canvas!.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
+      const ndcY = -(e.offsetY / this.canvas!.clientHeight) * 2 + 1;
 
-      const ndcX = (x / rect.width) * 2 - 1;
-      const ndcY = -(y / rect.height) * 2 + 1;
-
-      // Preguntarle al motor si estamos tocando el Gizmo
-      const hoveredGizmoPart = this.engine.pickGizmo(ndcX, ndcY);
-      if (hoveredGizmoPart) {
-        this.canvas!.style.cursor = 'pointer'; 
-      } else {
-        this.canvas!.style.cursor = 'default';
+      if (this.isDraggingGizmo) {
+        this.engine.updateGizmoDrag(ndcX, ndcY);
+        return; 
       }
+      
+      // Hover Visual
+      const hoveredGizmoPart = this.engine.pickGizmo(ndcX, ndcY);
+      this.canvas!.style.cursor = hoveredGizmoPart ? 'pointer' : 'default';
     });
 
-    // Gestión de Pointer Lock estilo Editor (Sólo al mantener Click Derecho)
     this.canvas.addEventListener('mousedown', (e) => {
-      isDragging = false;
       if (e.button === 2) { // Right Click
         this.canvas?.requestPointerLock();
-      }
-    });
+      } else if (e.button === 0) { // Left Click
+        const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
+        const ndcY = -(e.offsetY / this.canvas!.clientHeight) * 2 + 1;
 
-    this.canvas.addEventListener('mouseup', (e) => {
-      if (e.button === 2) {
-        document.exitPointerLock();
-      } else if (e.button === 0 && !isDragging) {
-        // Clic Izquierdo - Mouse Picking API WebGPU
-        const rect = this.canvas!.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const ndcX = (x / rect.width) * 2 - 1;
-        const ndcY = -(y / rect.height) * 2 + 1; // Y invertido para WebGPU
+        if (this.engine.isGizmoHovered()) {
+          this.isDraggingGizmo = true;
+          this.engine.beginGizmoDrag(ndcX, ndcY);
+          return; 
+        }
 
         const hitId = this.engine.pickActor(ndcX, ndcY);
         if (hitId !== null) {
           EditorState.selectActor(hitId, e.ctrlKey || e.metaKey);
         } else {
           EditorState.clearSelection();
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', (e: MouseEvent) => {
+      if (e.button === 2) {
+        document.exitPointerLock();
+      } else if (e.button === 0) {
+        if (this.isDraggingGizmo) {
+          this.isDraggingGizmo = false;
+          this.engine.endGizmoDrag();
         }
       }
     });
@@ -119,7 +118,6 @@ export class SerionViewport extends HTMLElement {
 
   disconnectedCallback() {
     // El motor se detiene automáticamente si el canvas es destruido
-    // No hace falta desconectar observadores.
   }
 
   private render() {

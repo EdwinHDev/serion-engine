@@ -15,6 +15,13 @@ export class GizmoSystem {
   
   public hoveredPart: GizmoPart | null = null;
 
+  private isDragging = false;
+  private dragPlaneNormal = [0,0,0];
+  private dragPlanePoint = [0,0,0];
+  private dragOffset = [0,0,0];
+  private dragStartActorPos = [0,0,0];
+  private dragAxis = [0,0,0];
+
   // Cajas de colisión locales (Alineadas a la geometría procedural base)
   private readonly hitBoxes: Record<GizmoPart, { min: number[], max: number[] }> = {
     'center': { min: [-0.4, -0.4, -0.4], max: [0.4, 0.4, 0.4] },
@@ -115,7 +122,7 @@ export class GizmoSystem {
   }
 
   public updateHover(device: GPUDevice, queue: GPUQueue, newHover: GizmoPart | null): void {
-    if (this.hoveredPart === newHover) return;
+    if (this.isDragging || this.hoveredPart === newHover) return;
     this.hoveredPart = newHover;
     this.rebuildGeometry(device, queue);
   }
@@ -135,6 +142,61 @@ export class GizmoSystem {
     }
     return tmin >= 0 ? tmin : null;
   }
+
+  public beginDrag(ray: Ray, camera: SCamera, actor: SActor): void {
+    if (!this.hoveredPart) return;
+    this.isDragging = true;
+    this.dragStartActorPos = [actor.x, actor.y, actor.z];
+    this.dragPlanePoint = [actor.x, actor.y, actor.z];
+
+    const viewDir = [camera.actor.x - actor.x, camera.actor.y - actor.y, camera.actor.z - actor.z];
+    const vl = Math.sqrt(viewDir[0]**2 + viewDir[1]**2 + viewDir[2]**2);
+    if (vl > 0) { viewDir[0]/=vl; viewDir[1]/=vl; viewDir[2]/=vl; }
+
+    this.dragAxis = [0,0,0];
+
+    // Construir el Plano Virtual Perpendicular a la vista pero alineado al Eje
+    if (this.hoveredPart === 'x') { this.dragAxis = [1,0,0]; this.dragPlaneNormal = [0, viewDir[1], viewDir[2]]; }
+    else if (this.hoveredPart === 'y') { this.dragAxis = [0,1,0]; this.dragPlaneNormal = [viewDir[0], 0, viewDir[2]]; }
+    else if (this.hoveredPart === 'z') { this.dragAxis = [0,0,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], 0]; }
+    else if (this.hoveredPart === 'xy') { this.dragAxis = [1,1,0]; this.dragPlaneNormal = [0,0,1]; }
+    else if (this.hoveredPart === 'xz') { this.dragAxis = [1,0,1]; this.dragPlaneNormal = [0,1,0]; }
+    else if (this.hoveredPart === 'yz') { this.dragAxis = [0,1,1]; this.dragPlaneNormal = [1,0,0]; }
+    else if (this.hoveredPart === 'center') { this.dragAxis = [1,1,1]; this.dragPlaneNormal = [viewDir[0], viewDir[1], viewDir[2]]; }
+
+    const nl = Math.sqrt(this.dragPlaneNormal[0]**2 + this.dragPlaneNormal[1]**2 + this.dragPlaneNormal[2]**2);
+    if (nl > 0) { this.dragPlaneNormal[0]/=nl; this.dragPlaneNormal[1]/=nl; this.dragPlaneNormal[2]/=nl; }
+
+    const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
+    if (t !== null) {
+      this.dragOffset = [
+        (ray.origin[0] + ray.direction[0] * t) - actor.x,
+        (ray.origin[1] + ray.direction[1] * t) - actor.y,
+        (ray.origin[2] + ray.direction[2] * t) - actor.z
+      ];
+    }
+  }
+
+  public updateDrag(ray: Ray, actor: SActor): void {
+    if (!this.isDragging) return;
+    const t = ray.intersectPlane(this.dragPlaneNormal, this.dragPlanePoint);
+    if (t !== null) {
+      const hitX = ray.origin[0] + ray.direction[0] * t;
+      const hitY = ray.origin[1] + ray.direction[1] * t;
+      const hitZ = ray.origin[2] + ray.direction[2] * t;
+
+      let newX = hitX - this.dragOffset[0]; let newY = hitY - this.dragOffset[1]; let newZ = hitZ - this.dragOffset[2];
+
+      // Restricción matemática estricta a los ejes permitidos
+      if (this.dragAxis[0] === 0) newX = this.dragStartActorPos[0];
+      if (this.dragAxis[1] === 0) newY = this.dragStartActorPos[1];
+      if (this.dragAxis[2] === 0) newZ = this.dragStartActorPos[2];
+
+      actor.setPosition(newX, newY, newZ);
+    }
+  }
+
+  public endDrag(): void { this.isDragging = false; }
 
   public hitTest(ray: Ray, camera: SCamera, actor: SActor): GizmoPart | null {
     const dx = actor.x - camera.actor.x;

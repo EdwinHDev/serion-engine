@@ -390,6 +390,14 @@ export class SerionEngine {
   }
 
   public getRHI(): SerionRHI { return this.rhi; }
+  public getGizmoSystem(): GizmoSystem | null { return this.gizmoSystem; }
+
+  /**
+   * Indica si el ratón está actualmente sobre alguna parte del Gizmo.
+   */
+  public isGizmoHovered(): boolean {
+    return this.gizmoSystem !== null && this.gizmoSystem.hoveredPart !== null;
+  }
 
   /**
    * Mouse Picking en el mundo 3D (Lanza un rayo).
@@ -439,5 +447,33 @@ export class SerionEngine {
     this.gizmoSystem.updateHover(this.rhi.getDevice(), this.rhi.getDevice().queue, hitPart);
 
     return hitPart;
+  }
+
+  public beginGizmoDrag(ndcX: number, ndcY: number): void {
+    const activeCamera = this.cameraManager.getActiveCamera();
+    if (!this.gizmoSystem || !activeCamera) return;
+    for (const actor of this.activeWorld.getActors().values()) {
+      if (actor.isSelected) {
+        activeCamera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
+        this.gizmoSystem.beginDrag(this.staticPickingRay, activeCamera, actor);
+        break;
+      }
+    }
+  }
+
+  public updateGizmoDrag(ndcX: number, ndcY: number): void {
+    const activeCamera = this.cameraManager.getActiveCamera();
+    if (!this.gizmoSystem || !activeCamera) return;
+    for (const actor of this.activeWorld.getActors().values()) {
+      if (actor.isSelected) {
+        activeCamera.unprojectRay(ndcX, ndcY, this.staticPickingRay);
+        this.gizmoSystem.updateDrag(this.staticPickingRay, actor);
+        break;
+      }
+    }
+  }
+
+  public endGizmoDrag(): void {
+    if (this.gizmoSystem) this.gizmoSystem.endDrag();
   }
 }
