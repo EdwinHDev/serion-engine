@@ -162,6 +162,7 @@ export class SerionViewport extends HTMLElement {
         <div class="status-text">SERION RENDERER (WEBGPU) - READY</div>
       </div>
       <canvas id="serion-canvas" tabindex="0"></canvas>
+      <serion-viewport-overlay></serion-viewport-overlay>
     `;
   }
 }

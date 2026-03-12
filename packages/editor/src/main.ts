@@ -15,6 +15,7 @@ import { SerionStatusBar } from './components/SerionStatusBar';
 import { SerionAssetItem } from './components/SerionAssetItem';
 import { SerionDropdown } from './components/SerionDropdown';
 import { SerionModePanel } from './components/SerionModePanel';
+import { SerionViewportOverlay } from './components/SerionViewportOverlay';
 
 /**
  * Register Custom Elements
@@ -29,6 +30,7 @@ const registerComponents = () => {
   defineSafe('serion-editor-shell', SerionEditorShell);
   defineSafe('serion-toolbar', SerionToolbar);
   defineSafe('serion-viewport', SerionViewport);
+  defineSafe('serion-viewport-overlay', SerionViewportOverlay);
   defineSafe('serion-sidebar', SerionSidebar);
   defineSafe('serion-content-browser', SerionContentBrowser);
   defineSafe('serion-status-bar', SerionStatusBar);
