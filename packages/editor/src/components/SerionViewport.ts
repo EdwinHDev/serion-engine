@@ -129,6 +129,9 @@ export class SerionViewport extends HTMLElement {
 
       await this.engine.start(this.canvas);
 
+      // Inyectar el motor al estado del editor ahora que existe y está listo
+      editorState.initializeDefaultSession(this.engine);
+
       this.statusText.style.transition = "opacity 1s ease-out";
       this.statusText.style.opacity = "0";
 

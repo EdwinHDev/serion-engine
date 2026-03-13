@@ -103,9 +103,23 @@ export class SerionToolbar extends HTMLElement {
         ];
 
         const mount = this.shadowRoot!.getElementById('add-menu-mount')!;
-        mount.appendChild(SerionDropdown.create(items, (a) => console.log('Spawn Action:', a)));
-
         const btn = this.shadowRoot!.getElementById('btn-quick-add')!;
+
+        mount.appendChild(SerionDropdown.create(items, (action) => {
+            if (action.startsWith('spawn:')) {
+                const type = action.split(':')[1];
+                
+                // Emite el evento global desacoplado
+                window.dispatchEvent(new CustomEvent('serion:spawn-actor', {
+                    detail: { type }
+                }));
+
+                // Cierra el menú para una UX limpia
+                mount.classList.remove('visible');
+                btn.classList.remove('active');
+            }
+        }));
+
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             mount.classList.toggle('visible');

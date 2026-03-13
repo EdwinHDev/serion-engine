@@ -1,4 +1,4 @@
-import { SWorld, SProject } from '@serion/engine';
+import { SWorld, SProject, SStaticMeshComponent, SerionEngine } from '@serion/engine';
 
 export type TransformMode = 'select' | 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
@@ -25,13 +25,24 @@ export class EditorState {
   public snapScaleEnabled: boolean = false;
   public snapScaleValue: number = 0.25; // 25%
 
-  public initializeDefaultSession(): void {
+  constructor() {
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners() {
+    // Intercepta las órdenes de creación de la UI
+    window.addEventListener('serion:spawn-actor', (e: Event) => {
+      const customEvent = e as CustomEvent;
+      this.handleSpawnActor(customEvent.detail.type);
+    });
+  }
+
+  public initializeDefaultSession(engine: SerionEngine): void {
     // Crea el proyecto base
     this.currentProject = new SProject("My Serion Game");
     
-    // Crea el mundo inicial (que internamente crea su PersistentLevel)
-    // En un entorno real, pasaríamos la referencia del motor aquí
-    const defaultWorld = new SWorld(null); 
+    // Crea el mundo inicial inyectando el motor REAL
+    const defaultWorld = new SWorld(engine); 
     this.setActiveWorld(defaultWorld);
     
     console.log(`[Serion Editor] Session initialized. Project: ${this.currentProject.name}`);
@@ -41,6 +52,45 @@ export class EditorState {
     this.activeWorld = world;
     this.selectedActorIds = []; // Limpia selección al cambiar de mundo
     window.dispatchEvent(new CustomEvent('serion:world-changed'));
+  }
+
+  private handleSpawnActor(type: string) {
+    if (!this.activeWorld) {
+      console.warn("[Serion Editor] Cannot spawn actor: No active world.");
+      return;
+    }
+
+    // Mapeo amigable para el nombre del actor
+    const nameMap: Record<string, string> = {
+      'cube': 'Cube',
+      'sphere': 'Sphere',
+      'plane': 'Plane',
+      'empty': 'Empty Actor',
+      'dir-light': 'Directional Light',
+      'point-light': 'Point Light'
+    };
+
+    const actorName = nameMap[type] || `New ${type}`;
+    
+    // 1. Instanciar en el mundo vivo
+    const newActor = this.activeWorld.spawnActor(actorName);
+    
+    // 2. Asignar componentes según el tipo
+    if (type === 'cube' || type === 'sphere' || type === 'plane') {
+        const meshId = `Primitive_${type.charAt(0).toUpperCase() + type.slice(1)}`;
+        const mesh = this.activeWorld.engine.geometryRegistry.getMesh(meshId);
+        if (mesh) {
+            newActor.staticMesh = new SStaticMeshComponent(meshId);
+        }
+    } else if (type === 'dir-light') {
+        // En el futuro esto añadiría un SLightComponent
+        // Por ahora spawnActor ya crea el actor base
+    }
+    
+    // 3. Seleccionar automáticamente el nuevo actor
+    this.selectActor(newActor.id, false);
+    
+    console.log(`[Serion Editor] Spawned: ${actorName} (ID: ${newActor.id}) in Level: ${this.activeWorld.persistentLevel.name}`);
   }
 
   // --- SETTERS REACTIVOS ---
@@ -105,5 +155,3 @@ export class EditorState {
 }
 
 export const editorState = new EditorState();
-// Inicialización diferida si es necesario, o inmediata aquí
-editorState.initializeDefaultSession();
