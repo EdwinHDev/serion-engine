@@ -34,10 +34,10 @@ export class SWorld {
     const id = this.entityManager.createEntity();
     const actor = new SActor(id, this);
     actor.name = name || `Actor_${id}`;
-    
+
     // El actor se registra en el nivel persistente
     this.persistentLevel.addActor(actor);
-    
+
     this.renderSequence.push(actor);
     this.markSceneGraphDirty();
 
@@ -89,6 +89,13 @@ export class SWorld {
         detail: { id: actor.id }
       }));
     }
+  }
+
+  /**
+   * Método helper para que la UI obtenga todos los actores del nivel activo.
+   */
+  public getAllActors(): SActor[] {
+    return this.persistentLevel.getActors();
   }
 
   public markSceneGraphDirty(): void {

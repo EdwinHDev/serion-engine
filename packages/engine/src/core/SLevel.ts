@@ -17,7 +17,13 @@ export class SLevel {
         this.actors.delete(id);
     }
 
+    public getActor(id: number): SActor | undefined {
+        return this.actors.get(id);
+    }
+
     public getActors(): SActor[] {
         return Array.from(this.actors.values());
     }
+
+
 }
