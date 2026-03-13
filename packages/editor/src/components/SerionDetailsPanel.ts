@@ -10,6 +10,12 @@ export class SerionDetailsPanel extends HTMLElement {
   private transformStartState: { p: number[], r: number[], s: number[] } | null = null;
   private isPreviewing: boolean = false;
   private selectionHandler = (e: Event) => this.onSelectionChanged(e as CustomEvent);
+  private transformHandler = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    if (this.currentActorId !== null && customEvent.detail.actorId === this.currentActorId) {
+      this.render(); // Refrescar UI con los datos reales del motor tras un gizmo drag
+    }
+  };
 
   constructor() {
     super();
@@ -18,11 +24,13 @@ export class SerionDetailsPanel extends HTMLElement {
 
   connectedCallback() {
     window.addEventListener('serion:selection-changed', this.selectionHandler);
+    window.addEventListener('serion:transform-ended', this.transformHandler);
     this.render();
   }
 
   disconnectedCallback() {
     window.removeEventListener('serion:selection-changed', this.selectionHandler);
+    window.removeEventListener('serion:transform-ended', this.transformHandler);
   }
 
   // ─── Math Helpers (Zero-Dependencies) ───────────────────────────────
@@ -114,7 +122,7 @@ export class SerionDetailsPanel extends HTMLElement {
 
   private applyPreview(): void {
     const root = this.shadowRoot;
-    if (!root || this.currentActorId === null) return;
+    if (!root || this.currentActorId === null || this.currentActorId === 0) return;
 
     // Extraer y aplicar Posición
     const px = parseFloat((root.getElementById('pos-x') as HTMLInputElement).value) || 0;
@@ -137,7 +145,7 @@ export class SerionDetailsPanel extends HTMLElement {
   }
 
   private endTransaction(): void {
-    if (!this.isPreviewing || !this.transformStartState || this.currentActorId === null) return;
+    if (!this.isPreviewing || !this.transformStartState || this.currentActorId === null || this.currentActorId === 0) return;
 
     const root = this.shadowRoot;
     if (!root) return;

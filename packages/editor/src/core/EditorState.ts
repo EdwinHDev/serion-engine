@@ -40,11 +40,12 @@ export class EditorState {
   public initializeDefaultSession(engine: SerionEngine): void {
     // Crea el proyecto base
     this.currentProject = new SProject("My Serion Game");
-    
-    // Crea el mundo inicial inyectando el motor REAL
-    const defaultWorld = new SWorld(engine); 
+
+    // Extraemos el mundo que el motor inicializó nativamente.
+    const defaultWorld = (engine as any).activeWorld || new SWorld(engine);
+
     this.setActiveWorld(defaultWorld);
-    
+
     console.log(`[Serion Editor] Session initialized. Project: ${this.currentProject.name}`);
   }
 
@@ -71,25 +72,26 @@ export class EditorState {
     };
 
     const actorName = nameMap[type] || `New ${type}`;
-    
+
     // 1. Instanciar en el mundo vivo
     const newActor = this.activeWorld.spawnActor(actorName);
-    
+
     // 2. Asignar componentes según el tipo
     if (type === 'cube' || type === 'sphere' || type === 'plane') {
-        const meshId = `Primitive_${type.charAt(0).toUpperCase() + type.slice(1)}`;
-        const mesh = this.activeWorld.engine.geometryRegistry.getMesh(meshId);
-        if (mesh) {
-            newActor.staticMesh = new SStaticMeshComponent(meshId);
-        }
+      const meshId = `Primitive_${type.charAt(0).toUpperCase() + type.slice(1)}`;
+      const mesh = this.activeWorld.engine.geometryRegistry.getMesh(meshId);
+      if (mesh) {
+        newActor.staticMesh = new SStaticMeshComponent(meshId);
+        newActor.setScale(100, 100, 100); // Escala AAA por defecto (1 metro)
+      }
     } else if (type === 'dir-light') {
-        // En el futuro esto añadiría un SLightComponent
-        // Por ahora spawnActor ya crea el actor base
+      // En el futuro esto añadiría un SLightComponent
+      // Por ahora spawnActor ya crea el actor base
     }
-    
+
     // 3. Seleccionar automáticamente el nuevo actor
     this.selectActor(newActor.id, false);
-    
+
     console.log(`[Serion Editor] Spawned: ${actorName} (ID: ${newActor.id}) in Level: ${this.activeWorld.persistentLevel.name}`);
   }
 

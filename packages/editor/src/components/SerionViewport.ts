@@ -78,10 +78,11 @@ export class SerionViewport extends HTMLElement {
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 2) { // Right Click
+      if (e.button === 2) { // Right Click (Navigation)
         editorState.isNavigating = true;
         this.canvas?.requestPointerLock();
-      } else if (e.button === 0) { // Left Click
+      } else if (e.button === 0) { // Left Click (Selection/Gizmo)
+        // BLOQUEO DE SEGURIDAD AAA: Solo el clic izquierdo selecciona.
         const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
         const ndcY = -(e.offsetY / this.canvas!.clientHeight) * 2 + 1;
 
