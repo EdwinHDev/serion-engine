@@ -18,6 +18,10 @@ export class FreeCameraController {
   constructor(private camera: SCamera) { }
 
   public update(deltaTime: number): void {
+    // CORRECCIÓN AAA: Consumir el delta SIEMPRE al inicio del frame.
+    // Esto drena el acumulador de InputManager. Si no estamos navegando, este valor simplemente se descarta.
+    const mouseDelta = InputManager.consumeMouseDelta();
+
     // Standard UX: Solo navegamos si se mantiene el click derecho presionado
     if (!InputManager.isRightMouseDown) {
       // Resetear velocidades para evitar deslizamientos infinitos si se suelta el botón
@@ -29,7 +33,7 @@ export class FreeCameraController {
     const actor = this.camera.actor;
 
     // --- 1. ROTACIÓN (Mouse Look) ---
-    const mouseDelta = InputManager.consumeMouseDelta();
+    // Usamos el delta fresco y recién drenado
     // Corregimos inversión: Mouse a la derecha -> Yaw disminuye (gira a la derecha en LookAt Z-Up)
     this.camera.yaw -= mouseDelta.x * this.mouseSensitivity;
     this.camera.pitch -= mouseDelta.y * this.mouseSensitivity;
