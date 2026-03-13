@@ -4,6 +4,7 @@ import { FreeCameraController } from '../camera/FreeCameraController';
 import { SDirectionalLightComponent } from '../components/SDirectionalLightComponent';
 import { SAtmosphereComponent } from '../components/SAtmosphereComponent';
 
+
 /**
  * SceneBuilder - Encargado de la construcción de escenarios y prototipado.
  * Capa 12.10: Limpieza y SRP (SceneBuilder Refactor).
@@ -41,6 +42,8 @@ export class SceneBuilder {
     // 3. Atmósfera Reactiva
     const atmosphereActor = world.spawnActor('Sky Atmosphere');
     atmosphereActor.atmosphere = new SAtmosphereComponent();
+    atmosphereActor.atmosphere.ambientIntensity = 1.0;
+
     atmosphereActor.atmosphere.ambientIntensity = 1.0;
 
     return cameraController;

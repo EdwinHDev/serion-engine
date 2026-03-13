@@ -25,3 +25,4 @@ export * from './geometry/GeometryRegistry';
 // [COMPONENTS]
 export * from './components/SStaticMeshComponent';
 export * from './components/SMaterialComponent';
+

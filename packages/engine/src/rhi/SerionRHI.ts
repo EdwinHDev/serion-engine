@@ -11,6 +11,8 @@ import { GizmoShaderWGSL } from './shaders/GizmoShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
+
+
 export interface SDrawCall {
   mesh: SStaticMesh;
   count: number;
@@ -107,7 +109,9 @@ export class SerionRHI {
   private gizmoPipeline: GPURenderPipeline | null = null;
   private gizmoLayout: GPUBindGroupLayout | null = null;
 
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
+
     this.canvas = canvas;
 
     if (!navigator.gpu) {
@@ -122,6 +126,7 @@ export class SerionRHI {
     if (!this.device) throw new Error("No device found.");
 
     this.context = canvas.getContext('webgpu');
+
     if (!this.context) throw new Error("No context found.");
 
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -281,7 +286,10 @@ export class SerionRHI {
       }
     });
 
+
     // Grid Pipeline
+
+
     this.gridPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: this.device.createShaderModule({ code: GridShaderWGSL }), entryPoint: 'vs_main' },
@@ -671,11 +679,14 @@ export class SerionRHI {
     mainPass.setBindGroup(0, this.cameraBindGroup!);
     this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
 
+    // Dibujar Atmósfera
     if (this.skyPipeline) {
       mainPass.setPipeline(this.skyPipeline);
       mainPass.draw(4, 1, 0, 0);
     }
+
     mainPass.end();
+
 
     // 2.2. SELECTION PASS (Mascaras transparentes a través de paredes)
     const selectionPass = encoder.beginRenderPass({
