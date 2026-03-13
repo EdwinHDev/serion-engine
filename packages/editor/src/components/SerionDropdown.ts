@@ -1,124 +1,79 @@
-/**
- * SerionDropdown Component
- * Reusable dropdown menu for the editor toolbar.
- */
-import { MenuManager } from './MenuManager';
-
-export interface MenuItem {
-  label?: string;
-  action?: () => void;
-  shortcut?: string;
-  divider?: boolean;
+export interface SerionMenuItem {
+    label: string;
+    shortcut?: string;
+    action?: string;
+    submenu?: SerionMenuItem[];
 }
 
-export class SerionDropdown extends HTMLElement {
-  private _items: MenuItem[] = [];
-  private _isOpen: boolean = false;
-  private _trigger: HTMLElement | null = null;
+export class SerionDropdown {
+    public static create(items: SerionMenuItem[], onSelect: (action: string) => void): HTMLElement {
+        const container = document.createElement('div');
+        container.className = 'serion-dropdown-root';
 
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-    this.addEventListener('serion-menu-close', () => this.close());
-  }
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'dropdown-item';
+            if (item.submenu) row.classList.add('has-submenu');
 
-  set items(value: MenuItem[]) {
-    this._items = value;
-    this.render();
-  }
+            row.innerHTML = `
+                <span class="label">${item.label}</span>
+                <div class="right-content">
+                    ${item.shortcut ? `<span class="shortcut">${item.shortcut}</span>` : ''}
+                    ${item.submenu ? `<span class="arrow">▶</span>` : ''}
+                </div>
+            `;
 
-  public open(trigger: HTMLElement) {
-    this._trigger = trigger;
-    this._isOpen = true;
-    MenuManager.getInstance().setActiveMenu(this);
-    this.render();
-  }
+            if (item.submenu) {
+                const sub = this.create(item.submenu, onSelect);
+                sub.className = 'serion-submenu';
+                row.appendChild(sub);
+            } else if (item.action) {
+                row.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    onSelect(item.action!);
+                });
+            }
+            container.appendChild(row);
+        });
 
-  public close() {
-    this._isOpen = false;
-    this._trigger = null;
-    this.render();
-  }
-
-  private handleItemClick(item: MenuItem) {
-    if (item.action) item.action();
-    MenuManager.getInstance().closeActiveMenu();
-  }
-
-  private render() {
-    if (!this.shadowRoot) return;
-
-    if (!this._isOpen) {
-      this.shadowRoot.innerHTML = '';
-      return;
+        return container;
     }
 
-    const triggerRect = this._trigger?.getBoundingClientRect();
-    const top = triggerRect ? triggerRect.bottom : 0;
-    const left = triggerRect ? triggerRect.left : 0;
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host {
-          position: fixed;
-          top: ${top}px;
-          left: ${left}px;
-          z-index: 10000;
-          min-width: 180px;
-          background-color: var(--serion-bg-2);
-          border: 1px solid var(--serion-border);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-          padding: 4px 0;
-          border-radius: 4px;
-          user-select: none;
-        }
-
-        .menu-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 6px 12px;
-          cursor: pointer;
-          color: var(--serion-text-main);
-          font-size: 11px;
-          transition: background-color 0.1s;
-        }
-
-        .menu-item:hover {
-          background-color: var(--serion-accent);
-          color: #fff;
-        }
-
-        .shortcut {
-          color: var(--serion-text-dim);
-          font-size: 10px;
-          margin-left: 2rem;
-        }
-
-        .divider {
-          height: 1px;
-          background-color: var(--serion-border);
-          margin: 4px 0;
-        }
-      </style>
-      <div class="menu-container">
-        ${this._items.map((item, index) => {
-      if (item.divider) return `<div class="divider"></div>`;
-      return `
-            <div class="menu-item" data-index="${index}">
-              <span>${item.label}</span>
-              ${item.shortcut ? `<span class="shortcut">${item.shortcut}</span>` : ''}
-            </div>
-          `;
-    }).join('')}
-      </div>
-    `;
-
-    this.shadowRoot.querySelectorAll('.menu-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const index = parseInt((el as HTMLElement).dataset.index || '0');
-        this.handleItemClick(this._items[index]);
-      });
-    });
-  }
+    // Retorna el CSS necesario para inyectar en los Web Components que usen este menú
+    public static getStyles(): string {
+        return `
+            .serion-dropdown-root, .serion-submenu {
+                background: var(--serion-bg-2);
+                border: 1px solid var(--serion-border);
+                border-radius: 4px;
+                padding: 4px 0;
+                display: flex;
+                flex-direction: column;
+                min-width: 200px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            }
+            .dropdown-item {
+                padding: 6px 14px;
+                font-size: 13px;
+                color: #ccc;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                position: relative;
+            }
+            .dropdown-item:hover { background: var(--serion-accent); color: white; }
+            .right-content { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #888; }
+            .dropdown-item:hover .right-content { color: rgba(255,255,255,0.8); }
+            
+            /* Lógica Multinivel */
+            .serion-submenu {
+                position: absolute;
+                top: -1px;
+                left: 100%;
+                display: none;
+            }
+            .dropdown-item.has-submenu:hover > .serion-submenu { display: flex; }
+        `;
+    }
 }

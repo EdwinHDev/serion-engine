@@ -71,3 +71,23 @@ El componente `<serion-editor-shell>` organiza el espacio de trabajo mediante un
 2. **Event-Driven:** La comunicación entre componentes (ej. seleccionar un objeto y mostrarlo en Details) debe realizarse mediante el `Event Bus` o `CustomEvents` globales.
 3. **Impecabilidad Visual:** Ningún elemento debe tener scrollbars visibles de estilo navegador; se deben usar estilos de scroll integrados en el tema oscuro.
 4. **Performance:** Prohibido el uso de librerías de UI externas. Todo debe ser vanilla JS/TS para mantener el bundle al mínimo.
+
+## 5. Arquitectura de Cabecera (Triple Layout UE5)
+**ID: SER-UI-HEADER**
+
+El editor utiliza una cabecera estructurada en tres niveles estrictamente separados por contexto, imitando el flujo de Unreal Engine 5:
+
+1. **Nivel 0: `SerionMenuBar` (Global):**
+   * **Propósito:** Comandos a nivel de aplicación (Guardar proyecto, Preferencias del editor, Empaquetado).
+   * **Contenido:** Logo, Menús clásicos (File, Edit, Window, Help) y Nombre del Proyecto a la derecha. Es un componente estático que nunca cambia.
+
+2. **Nivel 1: `SerionTabManager` (Contextual de Documento):**
+   * **Propósito:** Gestión de mundos/niveles abiertos.
+   * **Contenido:** Lista horizontal de pestañas. Cada pestaña muestra el nombre del nivel, un indicador de estado sin guardar (`*`) y un botón de cierre.
+
+3. **Nivel 2: `SerionToolbar` (Contextual de Herramienta):**
+   * **Propósito:** Acciones directas sobre el nivel actualmente activo.
+   * **Contenido:** Botón "Add" (Dropdown de primitivos), Selector de Modos (Select, Landscape, Foliage), y Controles de Simulación (Play, Pause, Stop) centrados.
+
+### 5.1 Estándar de Menús (SER-UI-MENUS)
+Queda prohibido el uso de menús HTML "hardcodeados" para listas complejas. Todo menú desplegable (Dropdown) en la UI debe generarse utilizando la clase de utilidad centralizada `SerionDropdown`. Esto garantiza soporte nativo para submenús infinitos, comportamiento `hover` estandarizado y prevención de recortes en los bordes de la pantalla.

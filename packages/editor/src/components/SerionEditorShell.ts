@@ -2,6 +2,16 @@
  * SerionEditorShell Component
  * Master Layout Orchestrator using CSS Grid and Pointer Capture for robust resizing.
  */
+import './SerionMenuBar';
+import './SerionTabManager';
+import './SerionToolbar';
+import './SerionSidebar';
+import './SerionViewport';
+import './SerionContentBrowser';
+import './SerionDetailsPanel';
+import './SerionStatusBar';
+import './SerionModePanel';
+
 
 export class SerionEditorShell extends HTMLElement {
   private isResizingSidebar = false;
@@ -109,11 +119,11 @@ export class SerionEditorShell extends HTMLElement {
         .shell-container {
           display: grid;
           grid-template-areas:
-            "toolbar toolbar"
+            "header header"
             "main-area sidebar"
             "footer sidebar"
             "statusbar statusbar";
-          grid-template-rows: var(--serion-toolbar-height) 1fr var(--footer-height) var(--serion-statusbar-height);
+          grid-template-rows: auto 1fr var(--footer-height) var(--serion-statusbar-height);
           grid-template-columns: 1fr var(--sidebar-width);
           height: 100%;
           width: 100%;
@@ -121,7 +131,13 @@ export class SerionEditorShell extends HTMLElement {
           position: relative;
         }
 
-        serion-toolbar { grid-area: toolbar; }
+        .editor-header {
+          grid-area: header;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .editor-header { grid-area: header; }
         serion-viewport { grid-area: main-area; }
         serion-sidebar { grid-area: sidebar; }
         serion-content-browser { grid-area: footer; }
@@ -140,7 +156,7 @@ export class SerionEditorShell extends HTMLElement {
         }
 
         .sidebar-splitter {
-          top: var(--serion-toolbar-height);
+          top: 104px; /* MenuBar(28) + Tabs(32) + Toolbar(44) */
           bottom: var(--serion-statusbar-height);
           right: calc(var(--sidebar-width) - 2px);
           width: 4px;
@@ -170,7 +186,11 @@ export class SerionEditorShell extends HTMLElement {
       
       <div class="resize-overlay"></div>
       <div class="shell-container">
-        <serion-toolbar></serion-toolbar>
+        <div class="editor-header">
+          <serion-menu-bar></serion-menu-bar>
+          <serion-tab-manager></serion-tab-manager>
+          <serion-toolbar></serion-toolbar>
+        </div>
         <serion-viewport></serion-viewport>
         <serion-sidebar></serion-sidebar>
         <serion-content-browser></serion-content-browser>

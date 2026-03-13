@@ -7,13 +7,14 @@ import './theme.css';
 
 // Import Components
 import { SerionEditorShell } from './components/SerionEditorShell';
+import { SerionMenuBar } from './components/SerionMenuBar';
+import { SerionTabManager } from './components/SerionTabManager';
 import { SerionToolbar } from './components/SerionToolbar';
 import { SerionViewport } from './components/SerionViewport';
 import { SerionSidebar } from './components/SerionSidebar';
 import { SerionContentBrowser } from './components/SerionContentBrowser';
 import { SerionStatusBar } from './components/SerionStatusBar';
 import { SerionAssetItem } from './components/SerionAssetItem';
-import { SerionDropdown } from './components/SerionDropdown';
 import { SerionModePanel } from './components/SerionModePanel';
 import { SerionViewportOverlay } from './components/SerionViewportOverlay';
 
@@ -28,6 +29,8 @@ const registerComponents = () => {
     }
   };
   defineSafe('serion-editor-shell', SerionEditorShell);
+  defineSafe('serion-menu-bar', SerionMenuBar);
+  defineSafe('serion-tab-manager', SerionTabManager);
   defineSafe('serion-toolbar', SerionToolbar);
   defineSafe('serion-viewport', SerionViewport);
   defineSafe('serion-viewport-overlay', SerionViewportOverlay);
@@ -35,7 +38,6 @@ const registerComponents = () => {
   defineSafe('serion-content-browser', SerionContentBrowser);
   defineSafe('serion-status-bar', SerionStatusBar);
   defineSafe('serion-asset-item', SerionAssetItem);
-  defineSafe('serion-dropdown', SerionDropdown);
   defineSafe('serion-mode-panel', SerionModePanel);
 };
 
@@ -45,9 +47,6 @@ registerComponents();
 import { MenuManager } from './components/MenuManager';
 MenuManager.initializeDefaultShortcuts();
 
-// Add global dropdown instance to body
-const dropdown = document.createElement('serion-dropdown');
-document.body.appendChild(dropdown);
 
 // Add global mode panel instance to body
 const modePanel = document.createElement('serion-mode-panel');
