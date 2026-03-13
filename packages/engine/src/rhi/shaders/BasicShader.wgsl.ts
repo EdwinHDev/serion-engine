@@ -102,54 +102,100 @@ fn calculateShadow(shadowMap: texture_depth_2d, shadowPos: vec3<f32>) -> f32 {
     return mix(1.0, visibility, inBounds);
 }
 
+const PI: f32 = 3.14159265359;
+
+fn DistributionGGX(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
+let a: f32 = roughness * roughness;
+let a2: f32 = a * a;
+let NdotH: f32 = max(dot(N, H), 0.0);
+let NdotH2: f32 = NdotH * NdotH;
+let num: f32 = a2;
+var denom: f32 = (NdotH2 * (a2 - 1.0) + 1.0);
+denom = PI * denom * denom;
+return num / max(denom, 0.0000001);
+}
+
+fn GeometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
+let r: f32 = (roughness + 1.0);
+let k: f32 = (r * r) / 8.0;
+let num: f32 = NdotV;
+let denom: f32 = NdotV * (1.0 - k) + k;
+return num / max(denom, 0.0000001);
+}
+
+fn GeometrySmith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
+let NdotV: f32 = max(dot(N, V), 0.0);
+let NdotL: f32 = max(dot(N, L), 0.0);
+let ggx2: f32 = GeometrySchlickGGX(NdotV, roughness);
+let ggx1: f32 = GeometrySchlickGGX(NdotL, roughness);
+return ggx1 * ggx2;
+}
+
+fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
+return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // 1. Espacio Lineal y Parámetros
+    // 1. Espacio Lineal y Parámetros PBR
     let metallic = input.pbrParams.x;
     let roughness = input.pbrParams.y;
-    let albedo = pow(input.baseColor.rgb, vec3<f32>(2.2));
+    let albedo = pow(input.baseColor, vec4<f32>(2.2));
 
-    let N = normalize(input.worldNormal);
-    let V = normalize(env.cameraPosition.xyz - input.worldPosition);
-    let L = normalize(-env.sunDirection_Intensity.xyz);
-    let nDotL = max(dot(N, L), 0.0);
+    let N: vec3<f32> = normalize(input.worldNormal);
+    let V: vec3<f32> = normalize(env.cameraPosition.xyz - input.worldPosition);
+
+    var F0: vec3<f32> = vec3<f32>(0.04);
+    F0 = mix(F0, albedo.rgb, metallic);
 
     // 2. Cascaded Shadow Maps (Branchless)
     let shadow0 = calculateShadow(shadowMap0, input.shadowPos0);
     let shadow1 = calculateShadow(shadowMap1, input.shadowPos1);
     let useCascade1 = step(env.cascadeSplits.x, input.viewZ);
-    let finalShadow = mix(shadow0, shadow1, useCascade1);
+    let visibility = mix(shadow0, shadow1, useCascade1);
 
-    // 3. Conservación de Energía PBR
-    let diffuseColor = albedo * (1.0 - metallic);
-    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    // 3. Luz Directa (Cook-Torrance BRDF)
+    var Lo: vec3<f32> = vec3<f32>(0.0);
 
-    // 4. Luz Directa y Exposición
-    let EXPOSURE: f32 = 1.0 / 100000.0;
-    let sunRadiance = env.sunColor_AmbientInt.rgb * (env.sunDirection_Intensity.w * EXPOSURE);
+    let L: vec3<f32> = normalize(-env.sunDirection_Intensity.xyz);
+    let H: vec3<f32> = normalize(V + L);
+    let NdotL: f32 = max(dot(N, L), 0.0);
 
-    let H = normalize(L + V);
-    let nDotH = max(dot(N, H), 0.0);
-    let specPower = mix(4.0, 2048.0, 1.0 - roughness);
-    let directSpecular = pow(nDotH, specPower) * f0 * sunRadiance;
+    let lightColor: vec3<f32> = env.sunColor_AmbientInt.rgb;
+    let lightIntensity: f32 = env.sunDirection_Intensity.w;
+    let radiance: vec3<f32> = lightColor * lightIntensity;
 
-    // 5. Entorno Hemisférico
+    // Cook-Torrance BRDF
+    let NDF: f32 = DistributionGGX(N, H, roughness);
+    let G: f32 = GeometrySmith(N, V, L, roughness);
+    let F: vec3<f32> = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    let numerator: vec3<f32> = NDF * G * F;
+    let denominator: f32 = 4.0 * max(dot(N, V), 0.0) * NdotL;
+    let specular: vec3<f32> = numerator / max(denominator, 0.001);
+
+    let kS: vec3<f32> = F;
+    var kD: vec3<f32> = vec3<f32>(1.0) - kS;
+    kD = kD * (1.0 - metallic);
+
+    // La sombra (visibility) afecta a toda la radiancia saliente
+    let directLight: vec3<f32> = (kD * albedo.rgb / PI + specular) * radiance * NdotL * visibility;
+    Lo = Lo + directLight;
+
+    // 4. Luz Ambiental Hemisférica
     let up = N.z * 0.5 + 0.5;
     let ambientIrradiance = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
-    let ambientDiffuse = diffuseColor * ambientIrradiance;
+    let ambientDiffuse = albedo.rgb * (1.0 - metallic) * ambientIrradiance;
 
-    // Reflejo Ambiental (Para metales)
     let R = reflect(-V, N);
     let reflMix = R.z * 0.5 + 0.5;
     let ambientRefl = mix(env.groundColor.rgb, env.skyColor.rgb, reflMix) * env.sunColor_AmbientInt.w;
-    let ambientSpecular = f0 * ambientRefl * (1.0 - roughness);
+    let ambientSpecular = F0 * ambientRefl * (1.0 - roughness);
 
-    // 6. Ecuación de Sombreado (La sombra SOLO afecta a la luz del Sol)
-    let directLight = ((diffuseColor * sunRadiance * nDotL) + directSpecular) * finalShadow;
-    let ambientLight = ambientDiffuse + ambientSpecular;
-    var finalColor = directLight + ambientLight;
+    let ambient: vec3<f32> = ambientDiffuse + ambientSpecular;
+    var finalColor: vec3<f32> = ambient + Lo;
 
-    // 7. ACES Filmic Tone Mapping
+    // 5. ACES Filmic Tone Mapping
     let a = 2.51;
     let b = 0.03;
     let c = 2.43;
@@ -157,10 +203,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let e = 0.14;
     finalColor = clamp((finalColor * (a * finalColor + b)) / (finalColor * (c * finalColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 
-    // 8. Corrección Gamma (sRGB)
+    // 6. Corrección Gamma (sRGB)
     finalColor = pow(finalColor, vec3<f32>(1.0 / 2.2));
 
-    return vec4<f32>(finalColor, input.baseColor.a);
+    return vec4<f32>(finalColor, albedo.a);
 }
 
 @vertex
