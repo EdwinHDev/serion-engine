@@ -33,6 +33,7 @@ export class SerionRHI {
   private format: GPUTextureFormat = 'bgra8unorm';
 
   private renderPipeline: GPURenderPipeline | null = null;
+  private depthPrepassPipeline: GPURenderPipeline | null = null;
   private shadowPipeline0: GPURenderPipeline | null = null;
   private shadowPipeline1: GPURenderPipeline | null = null;
   private gridPipeline: GPURenderPipeline | null = null;
@@ -41,6 +42,7 @@ export class SerionRHI {
   private cameraBuffer: GPUBuffer | null = null;
   private instanceBuffer: GPUBuffer | null = null;
 
+  private envLayout: GPUBindGroupLayout | null = null;
   private cameraBindGroup: GPUBindGroup | null = null;
   private shadowBindGroup: GPUBindGroup | null = null;
 
@@ -154,14 +156,16 @@ export class SerionRHI {
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
 
     // 1. Layout Principal (Cámara Jugador)
-    const envLayout = this.device.createBindGroupLayout({
+    this.envLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }
       ]
     });
+    const envLayout = this.envLayout;
 
     this.postProcessLayout = this.device.createBindGroupLayout({
       entries: [
@@ -169,8 +173,7 @@ export class SerionRHI {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
@@ -250,13 +253,21 @@ export class SerionRHI {
       }
     ];
 
-    // Main Render Pipeline
+    // Depth Pre-pass (Solo escribe Profundidad, NO escribe Color)
+    this.depthPrepassPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
+    });
+
+    // Main Render Pipeline (NO escribe profundidad de nuevo, usa 'less_equal')
     this.renderPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
       fragment: { module: shaderModule, entryPoint: 'fs_main', targets: [{ format: 'rgba16float' }] },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less-equal', format: 'depth24plus' }
     });
 
     // Selection Pipeline (X-Ray)
@@ -426,16 +437,7 @@ export class SerionRHI {
     this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
     this.linearSampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
-    // Cámara Principal
-    this.cameraBindGroup = this.device.createBindGroup({
-      layout: envLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.cameraBuffer } },
-        { binding: 1, resource: this.shadowView0! },
-        { binding: 2, resource: this.shadowView1! },
-        { binding: 3, resource: this.shadowSampler! }
-      ]
-    });
+    // Cámara Principal: Se crea en createRenderTargets() porque depende de ssaoBlurTextureView
 
     // Sombras
     this.shadowBindGroup = this.device.createBindGroup({
@@ -587,16 +589,27 @@ export class SerionRHI {
       ]
     });
 
-    // BindGroup del Post-Procesado (Usa el Mip 0 como resultado final acumulado, SSAO, y Flares)
+    // BindGroup del Post-Procesado (SSAO ya aplicado en el Forward Pass)
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
       entries: [
         { binding: 0, resource: this.linearSampler! },
         { binding: 1, resource: this.hdrTextureView },
         { binding: 2, resource: this.bloomMipViews[0] },
-        { binding: 3, resource: this.ssaoBlurTextureView! },
-        { binding: 4, resource: this.lensFlareTextureView! },
-        { binding: 5, resource: this.selectionTextureView! }
+        { binding: 3, resource: this.lensFlareTextureView! },
+        { binding: 4, resource: this.selectionTextureView! }
+      ]
+    });
+
+    // Cámara Principal (incluye SSAO Blur como binding 4)
+    this.cameraBindGroup = this.device!.createBindGroup({
+      layout: this.envLayout!,
+      entries: [
+        { binding: 0, resource: { buffer: this.cameraBuffer! } },
+        { binding: 1, resource: this.shadowView0! },
+        { binding: 2, resource: this.shadowView1! },
+        { binding: 3, resource: this.shadowSampler! },
+        { binding: 4, resource: this.ssaoBlurTextureView! }
       ]
     });
   }
@@ -686,41 +699,20 @@ export class SerionRHI {
     this.executeShadowPass(encoder, this.shadowPassDescriptor0!, this.shadowPipeline0!, drawCalls, activeCallCount);
     this.executeShadowPass(encoder, this.shadowPassDescriptor1!, this.shadowPipeline1!, drawCalls, activeCallCount);
 
-    // 2. PASE DE BELLEZA (Beauty Pass HDR)
-    const mainPass = encoder.beginRenderPass(this.mainPassDescriptor!);
-    mainPass.setPipeline(this.renderPipeline);
-    mainPass.setBindGroup(0, this.cameraBindGroup!);
-    this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
-
-    // Dibujar Atmósfera
-    if (this.skyPipeline) {
-      mainPass.setPipeline(this.skyPipeline);
-      mainPass.draw(4, 1, 0, 0);
-    }
-
-
-
-
-
-    mainPass.end();
-
-
-    // 2.2. SELECTION PASS (Mascaras transparentes a través de paredes)
-    const selectionPass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.selectionTextureView!,
-        loadOp: 'clear', clearValue: { r: 0, g: 0, b: 0, a: 0 }, storeOp: 'store'
-      }],
+    // 2. DEPTH PRE-PASS (Dibuja la geometría sin color para el SSAO)
+    const prepass = encoder.beginRenderPass({
+      colorAttachments: [],
       depthStencilAttachment: {
-        view: this.depthTextureView!, depthLoadOp: 'load', depthStoreOp: 'store'
+        view: this.depthTextureView!,
+        depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store'
       }
     });
-    selectionPass.setPipeline(this.selectionPipeline!);
-    selectionPass.setBindGroup(0, this.cameraBindGroup!);
-    this.recordDrawCalls(selectionPass, drawCalls, activeCallCount);
-    selectionPass.end();
+    prepass.setPipeline(this.depthPrepassPipeline!);
+    prepass.setBindGroup(0, this.cameraBindGroup!);
+    this.recordDrawCalls(prepass, drawCalls, activeCallCount);
+    prepass.end();
 
-    // 2.5. SSAO y SSAO Blur Passes
+    // 3. SSAO & SSAO BLUR (Usa la profundidad del Pre-Pass)
     const ssaoPass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.ssaoTextureView!,
@@ -746,6 +738,37 @@ export class SerionRHI {
     ssaoBlurPass.setBindGroup(0, this.ssaoBlurBindGroup!);
     ssaoBlurPass.draw(4, 1, 0, 0);
     ssaoBlurPass.end();
+
+    // 4. FORWARD MAIN PASS (Pinta el color con PBR y SSAO aplicados)
+    // CRÍTICO: No limpiar la profundidad, usar 'load'
+    this.mainPassDescriptor!.depthStencilAttachment!.depthLoadOp = 'load';
+    const mainPass = encoder.beginRenderPass(this.mainPassDescriptor!);
+    mainPass.setPipeline(this.renderPipeline);
+    mainPass.setBindGroup(0, this.cameraBindGroup!);
+    this.recordDrawCalls(mainPass, drawCalls, activeCallCount);
+
+    // Dibujar Atmósfera
+    if (this.skyPipeline) {
+      mainPass.setPipeline(this.skyPipeline);
+      mainPass.draw(4, 1, 0, 0);
+    }
+
+    mainPass.end();
+
+    // 4.5. SELECTION PASS (Mascaras transparentes a través de paredes)
+    const selectionPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.selectionTextureView!,
+        loadOp: 'clear', clearValue: { r: 0, g: 0, b: 0, a: 0 }, storeOp: 'store'
+      }],
+      depthStencilAttachment: {
+        view: this.depthTextureView!, depthLoadOp: 'load', depthStoreOp: 'store'
+      }
+    });
+    selectionPass.setPipeline(this.selectionPipeline!);
+    selectionPass.setBindGroup(0, this.cameraBindGroup!);
+    this.recordDrawCalls(selectionPass, drawCalls, activeCallCount);
+    selectionPass.end();
 
     // 3. BLOOM PYRAMID (Kawase)
 

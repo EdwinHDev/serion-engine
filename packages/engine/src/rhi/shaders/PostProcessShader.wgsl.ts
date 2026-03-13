@@ -26,25 +26,16 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(0) var texSampler: sampler;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(2) var bloomTexture: texture_2d<f32>;
-@group(0) @binding(3) var ssaoTexture: texture_2d<f32>;
-@group(0) @binding(4) var lensFlareTexture: texture_2d<f32>;
-@group(0) @binding(5) var selectionTexture: texture_2d<f32>;
+@group(0) @binding(3) var lensFlareTexture: texture_2d<f32>;
+@group(0) @binding(4) var selectionTexture: texture_2d<f32>;
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let hdrColor = textureSample(sceneTexture, texSampler, input.uv).rgb;
     let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
-    let ao = textureSample(ssaoTexture, texSampler, input.uv).r;
     let lensFlareColor = textureSample(lensFlareTexture, texSampler, input.uv).rgb;
 
-    // LUMA MASKING: Calcular la luminancia de la escena sin procesar
-    let luma = dot(hdrColor, vec3<f32>(0.2126, 0.7152, 0.0722));
-
-    // Si el píxel es intensamente brillante (ej. le pega el sol), la oclusión se desvanece a 1.0 (Sin Sombra)
-    let directLightProtection = smoothstep(0.05, 1.0, luma);
-    let physicalAO = mix(ao, 1.0, directLightProtection);
-
-    // Aplicar AO corregido antes del Bloom (Abrimos el sangrado al 120%)
-    let finalHdrColor = (hdrColor * physicalAO) + (bloomColor * 1.2);
+    // Composición HDR + Bloom (SSAO ya aplicado en el Forward Pass)
+    let finalHdrColor = hdrColor + (bloomColor * 1.2);
     
     // AAA Outline Edge Detection
     let texSize = vec2<f32>(textureDimensions(selectionTexture));

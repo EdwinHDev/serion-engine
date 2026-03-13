@@ -15,6 +15,7 @@ struct GlobalEnvironment {
 @group(0) @binding(1) var shadowMap0: texture_depth_2d;
 @group(0) @binding(2) var shadowMap1: texture_depth_2d;
 @group(0) @binding(3) var shadowSampler: sampler_comparison;
+@group(0) @binding(4) var ssaoMap: texture_2d<f32>;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -182,7 +183,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let directLight: vec3<f32> = (kD * albedo.rgb / PI + specular) * radiance * NdotL * visibility;
     Lo = Lo + directLight;
 
-    // 4. Luz Ambiental Hemisférica
+    // 4. Luz Ambiental Hemisférica y SSAO Físico
+    let screenCoord = vec2<i32>(input.position.xy);
+    let ao = textureLoad(ssaoMap, screenCoord, 0).r;
+
     let up = N.z * 0.5 + 0.5;
     let ambientIrradiance = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
     let ambientDiffuse = albedo.rgb * (1.0 - metallic) * ambientIrradiance;
@@ -192,7 +196,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let ambientRefl = mix(env.groundColor.rgb, env.skyColor.rgb, reflMix) * env.sunColor_AmbientInt.w;
     let ambientSpecular = F0 * ambientRefl * (1.0 - roughness);
 
-    let ambient: vec3<f32> = ambientDiffuse + ambientSpecular;
+    // El SSAO *únicamente* oscurece la luz ambiental (indirecta)
+    let ambient: vec3<f32> = (ambientDiffuse + ambientSpecular) * ao;
     var finalColor: vec3<f32> = ambient + Lo;
 
     // 5. ACES Filmic Tone Mapping
