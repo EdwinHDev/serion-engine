@@ -13,6 +13,8 @@ import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
 
 
+
+
 export interface SDrawCall {
   mesh: SStaticMesh;
   count: number;
@@ -110,6 +112,8 @@ export class SerionRHI {
   private gizmoLayout: GPUBindGroupLayout | null = null;
 
 
+
+
   public async initialize(canvas: HTMLCanvasElement, maxEntities: number): Promise<void> {
 
     this.canvas = canvas;
@@ -125,6 +129,11 @@ export class SerionRHI {
     this.device = await this.adapter.requestDevice();
     if (!this.device) throw new Error("No device found.");
 
+
+
+
+
+
     this.context = canvas.getContext('webgpu');
 
     if (!this.context) throw new Error("No context found.");
@@ -138,6 +147,8 @@ export class SerionRHI {
     canvas.height = this.currentHeight;
 
     this.context.configure({ device: this.device, format: this.format, alphaMode: 'premultiplied' });
+    this.createShadowMaps();
+
     this.createShadowMaps();
 
     const shaderModule = this.device.createShaderModule({ code: BasicShaderWGSL });
@@ -436,7 +447,9 @@ export class SerionRHI {
 
     this.createRenderTargets(this.currentWidth, this.currentHeight);
     this.updatePassDescriptors();
+
   }
+
 
   private createShadowMaps(): void {
     const size = 2048;
@@ -684,6 +697,10 @@ export class SerionRHI {
       mainPass.setPipeline(this.skyPipeline);
       mainPass.draw(4, 1, 0, 0);
     }
+
+
+
+
 
     mainPass.end();
 
