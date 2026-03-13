@@ -47,48 +47,71 @@ struct FragmentOutput {
 fn fs_main(input: VertexOutput) -> FragmentOutput {
     var out: FragmentOutput;
     let worldDir = normalize(input.farPoint - input.nearPoint);
-    let safeDirZ = min(worldDir.z, -0.0001);
     
-    let t = -env.cameraPosition.z / safeDirZ;
+    // Evitamos mirar hacia el cielo y división por cero (Solo dibujamos el suelo)
+    if (worldDir.z >= -0.0001) {
+        discard;
+    }
+    
+    // Intersección con el plano Z=0
+    let t = -env.cameraPosition.z / worldDir.z;
     let worldPos = env.cameraPosition.xyz + worldDir * t;
     
     let clipPos = env.viewProjectionMatrix * vec4<f32>(worldPos, 1.0);
+    if (clipPos.w <= 0.0) { discard; }
+    
+    // Corrección del buffer de profundidad
     out.depth = clipPos.z / clipPos.w;
 
     let coord = worldPos.xy;
     let derivative = max(fwidth(coord), vec2<f32>(0.00001));
     
+    // 1. Sub-cuadrícula fina (10 unidades = 10 cm)
+    let grid10 = abs(fract(coord / 10.0 - 0.5) - 0.5) / (derivative / 10.0);
+    let line10 = 1.0 - min(min(grid10.x, grid10.y), 1.0);
+
+    // 2. Cuadrícula principal (100 unidades = 1 metro)
     let grid100 = abs(fract(coord / 100.0 - 0.5) - 0.5) / (derivative / 100.0);
-    let grid1000 = abs(fract(coord / 1000.0 - 0.5) - 0.5) / (derivative / 1000.0);
-    
     let line100 = 1.0 - min(min(grid100.x, grid100.y), 1.0);
-    let line1000 = 1.0 - min(min(grid1000.x, grid1000.y), 1.0);
     
-    var color = vec3<f32>(0.15);
+    // Colores base de la cuadrícula
+    var color = vec3<f32>(0.15); // Fondo casi transparente
     var alpha = 0.0;
     
-    alpha = mix(alpha, 0.25, line100);
-    color = mix(color, vec3<f32>(0.4), line1000);
-    alpha = mix(alpha, 0.5, line1000);
+    // Mezclamos las líneas de las cuadrículas
+    alpha = mix(alpha, 0.15, line10);        // Líneas tenues cada 10cm
+    alpha = mix(alpha, 0.50, line100);       // Líneas fuertes cada 1m
+    color = mix(color, vec3<f32>(0.5), line100);
     
-    let axisX = 1.0 - min(abs(worldPos.y) / (derivative.y * 1.5), 1.0);
-    let axisY = 1.0 - min(abs(worldPos.x) / (derivative.x * 1.5), 1.0);
+    // 3. Ejes principales (X Rojo, Y Verde)
+    let axisThickness = derivative * 1.5;
+    let axisX = 1.0 - min(abs(worldPos.y) / axisThickness.y, 1.0); // Eje X (y=0)
+    let axisY = 1.0 - min(abs(worldPos.x) / axisThickness.x, 1.0); // Eje Y (x=0)
     
-    color = mix(color, vec3<f32>(0.8, 0.1, 0.1), axisX);
-    alpha = mix(alpha, 0.7, axisX);
-    color = mix(color, vec3<f32>(0.1, 0.8, 0.1), axisY);
-    alpha = mix(alpha, 0.7, axisY);
+    // Resaltamos el Eje X (Adelante/Atrás) - Rojo
+    if (axisX > 0.0) {
+        color = mix(color, vec3<f32>(0.9, 0.2, 0.2), axisX);
+        alpha = max(alpha, axisX * 0.9);
+    }
+    
+    // Resaltamos el Eje Y (Izquierda/Derecha) - Verde
+    if (axisY > 0.0) {
+        color = mix(color, vec3<f32>(0.2, 0.9, 0.2), axisY);
+        alpha = max(alpha, axisY * 0.9);
+    }
 
+    // 4. Desvanecimiento radial en la distancia
     let dist = length(worldPos.xy - env.cameraPosition.xy);
-    let fade = 1.0 - clamp(dist / 50000.0, 0.0, 1.0);
+    let fade = 1.0 - clamp(dist / 30000.0, 0.0, 1.0); // Visible hasta 300 metros
     alpha = alpha * fade;
     
-    if (worldDir.z >= -0.0001 || clipPos.w <= 0.0 || alpha <= 0.01) { discard; }
+    if (alpha <= 0.01) { discard; }
     
     out.color = vec4<f32>(color, alpha);
     return out;
 }
 
+// Función matemática de soporte
 fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
     let a00 = m[0][0]; let a01 = m[0][1]; let a02 = m[0][2]; let a03 = m[0][3];
     let a10 = m[1][0]; let a11 = m[1][1]; let a12 = m[1][2]; let a13 = m[1][3];

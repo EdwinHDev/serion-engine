@@ -289,7 +289,7 @@ export class SerionRHI {
         module: this.device.createShaderModule({ code: GridShaderWGSL }),
         entryPoint: 'fs_main',
         targets: [{
-          format: 'rgba16float',
+          format: this.format, // <-- Directo al Swapchain, ya no es HDR
           blend: {
             color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
@@ -675,11 +675,6 @@ export class SerionRHI {
       mainPass.setPipeline(this.skyPipeline);
       mainPass.draw(4, 1, 0, 0);
     }
-
-    if (this.gridPipeline) {
-      mainPass.setPipeline(this.gridPipeline);
-      mainPass.draw(6, 1, 0, 0);
-    }
     mainPass.end();
 
     // 2.2. SELECTION PASS (Mascaras transparentes a través de paredes)
@@ -798,6 +793,26 @@ export class SerionRHI {
     postProcessPass.setBindGroup(0, this.postProcessBindGroup!);
     postProcessPass.draw(4, 1, 0, 0);
     postProcessPass.end();
+
+    // 4.5. GRID OVERLAY PASS (Inmune a luces, SSAO y Post-Procesos)
+    if (this.gridPipeline) {
+      const gridPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.context.getCurrentTexture().createView(),
+          loadOp: 'load', // Mantener lo que dibujó el Post-Process
+          storeOp: 'store'
+        }],
+        depthStencilAttachment: {
+          view: this.depthTextureView!,
+          depthLoadOp: 'load', // Leer la profundidad para que los cubos oculten la grid
+          depthStoreOp: 'store'
+        }
+      });
+      gridPass.setPipeline(this.gridPipeline);
+      gridPass.setBindGroup(0, this.cameraBindGroup!);
+      gridPass.draw(6, 1, 0, 0);
+      gridPass.end();
+    }
 
     // 5. GIZMO PASS (Direct to Swapchain - Pure Unlit)
     // Se dibuja en la textura actual del context para saltarse el Tonemapping

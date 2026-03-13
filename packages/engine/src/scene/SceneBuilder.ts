@@ -18,12 +18,13 @@ export class SceneBuilder {
     const sunActor = world.spawnActor('Directional Light');
     sunActor.directionalLight = new SDirectionalLightComponent();
     
-    // Inclinamos el Sol cerca del horizonte (Z = -0.15) para forzar la dispersión de Rayleigh
-    // El color y la intensidad base ahora son orquestados por AtmosphereSystem en la CPU.
-    sunActor.directionalLight.setDirection(0.8, 0.2, -0.15);
+    // Simulación de las 10:00 AM (Elevación media-alta desde el Este)
+    // Pitch -50, Yaw 45 -> Vector: (0.454, 0.454, -0.766)
+    // El AtmosphereSystem orquestará el color basado en esta dirección.
+    sunActor.directionalLight.setDirection(0.454, 0.454, -0.766);
 
     const atmosphereActor = world.spawnActor('Sky Atmosphere');
     atmosphereActor.atmosphere = new SAtmosphereComponent();
     atmosphereActor.atmosphere.ambientIntensity = 1.0;
   }
-}
+}

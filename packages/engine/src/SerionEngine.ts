@@ -119,17 +119,17 @@ export class SerionEngine {
             const s = e.detail.state;
             actor.setPosition(s.p[0], s.p[1], s.p[2]);
             if (actor.setRotation) actor.setRotation(s.r[0], s.r[1], s.r[2], s.r[3]);
-            else { 
-              actor.rotationX = s.r[0]; 
-              actor.rotationY = s.r[1]; 
-              actor.rotationZ = s.r[2]; 
-              if (actor.rotationW !== undefined) actor.rotationW = s.r[3]; 
+            else {
+              actor.rotationX = s.r[0];
+              actor.rotationY = s.r[1];
+              actor.rotationZ = s.r[2];
+              if (actor.rotationW !== undefined) actor.rotationW = s.r[3];
             }
             if (actor.setScale) actor.setScale(s.s[0], s.s[1], s.s[2]);
-            else { 
-              actor.scaleX = s.s[0]; 
-              actor.scaleY = s.s[1]; 
-              actor.scaleZ = s.s[2]; 
+            else {
+              actor.scaleX = s.s[0];
+              actor.scaleY = s.s[1];
+              actor.scaleZ = s.s[2];
             }
           }
         }) as EventListener);
@@ -137,9 +137,12 @@ export class SerionEngine {
 
       // Showcase Camera
       const cameraActor = this.activeWorld.spawnActor('Camera');
-      cameraActor.setPosition(0, -900, 400);
+      cameraActor.setPosition(367, -350, 120);
 
       const mainCamera = new SCamera(cameraActor);
+      mainCamera.pitch = -10.0;
+      mainCamera.yaw = 132.0;
+
       this.cameraManager.setActiveCamera(mainCamera);
       this.freeCameraController = new FreeCameraController(mainCamera);
 
@@ -408,7 +411,7 @@ export class SerionEngine {
           this.batchBuffer.set(actor.material.baseColor, targetOffset + 32);
           this.batchBuffer.set(actor.material.pbrParams, targetOffset + 36);
           // SOBREESCRIBIR EL COMPONENTE 'W' (Padding) CON EL FLAG
-          this.batchBuffer[targetOffset + 39] = selectionFlag; 
+          this.batchBuffer[targetOffset + 39] = selectionFlag;
         } else {
           // Material por defecto con el flag en el último componente
           this.batchBuffer.set([1, 1, 1, 1, 0, 0.5, 0.5, selectionFlag], targetOffset + 32);
@@ -451,7 +454,7 @@ export class SerionEngine {
 
     for (const actor of this.activeWorld.getActors().values()) {
       if (!actor.staticMesh) continue;
-      
+
       const t = this.staticPickingRay.intersectAABB(actor.worldAABB);
       if (t !== null && t < minDistance) {
         minDistance = t;
