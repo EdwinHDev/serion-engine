@@ -33,5 +33,15 @@ export class AtmosphereSystem {
     atmo._calculatedGroundColor[0] = r * 1.0;
     atmo._calculatedGroundColor[1] = g * 0.40 + 0.05;
     atmo._calculatedGroundColor[2] = b * 0.20 + 0.05;
+
+    // 3. CORRECCIÓN AAA: Atenuación física por horizonte (DayFade)
+    // sunDir[2] es la elevación invertida. Positivo = Noche, Negativo = Día.
+    const sunElevation = -sunDir[2];
+    let dayFade = (sunElevation + 0.05) / 0.1;
+    if (dayFade < 0) dayFade = 0;
+    if (dayFade > 1) dayFade = 1;
+
+    // Aplicar atenuación a la intensidad final para oscurecer los modelos 3D
+    sun.intensity *= dayFade;
   }
 }

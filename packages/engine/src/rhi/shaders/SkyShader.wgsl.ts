@@ -66,7 +66,21 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     
     let mieHalo = env.sunColor_Ambient.xyz * (hg1 * 0.05 + hg2 * 0.02) * rayleighFactor;
     let rawColor = max(skyBase + physicalSunDisc + mieHalo, vec3<f32>(0.0));
-    return vec4<f32>(rawColor, 1.0);
+
+    // --- CORRECCIÓN AAA: Transición Día / Noche ---
+    // En Serion, sunDir.z es negativo cuando el sol está en el cielo.
+    let sunElevation = -env.sunDirection_Intensity.z;
+    
+    // smoothstep crea un fundido suave entre Noche (0.0) y Día (1.0).
+    let dayFade = smoothstep(-0.05, 0.05, sunElevation);
+    
+    // Color base del espacio/noche (Azul naval profundo)
+    let nightColor = vec3<f32>(0.001, 0.002, 0.008);
+    
+    // Mezclamos el color calculado de la dispersión con el color nocturno
+    let finalColor = mix(nightColor, rawColor, dayFade);
+    
+    return vec4<f32>(finalColor, 1.0);
 }
 
 fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
