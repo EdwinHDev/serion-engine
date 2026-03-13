@@ -18,17 +18,21 @@ Inspirado en el `UObject` de Unreal, el `SObject` es la clase base de toda la je
 
 ---
 
-## 2. Arquitectura de Simulación: Mundos y Niveles
+## 2. Arquitectura de Simulación: Proyectos, Mundos y Niveles
 
-### 2.1 SWorld (Unidad de Simulación Independiente)
-Cada `SWorld` es un contenedor estanco que gestiona su propio tiempo, física y entidades.
-* **Inercia Total:** Al nacer, un `SWorld` está vacío. No contiene luces, cámaras ni mallas.
-* **World Initializers:** El contenido inicial se inyecta mediante scripts especializados (ej. `LevelInitializer` para el juego o `MaterialPreviewInitializer` para visualizadores de assets).
+Para replicar el comportamiento de motores AAA, la memoria de simulación se divide en tres entidades jerárquicas:
 
-### 2.2 SLevel y World Partitioning
-Para soportar mapas masivos al estilo MMORPG (Lineage 2):
-* **Spatial Grid Partitioning:** El nivel se divide en celdas binarias. Solo se cargan en RAM las celdas dentro del radio de influencia del jugador.
-* **Streaming Binario:** Los datos de nivel se descargan como `ArrayBuffers` directamente desde el servidor, minimizando el parseo de JSON.
+### 2.1 SProject (El Contenedor Maestro)
+Es la entidad raíz de una sesión de desarrollo. Mantiene la configuración global (Project Settings) y un Manifiesto que registra todos los niveles que pertenecen al juego.
+
+### 2.2 SWorld (El Espacio-Tiempo Vivo)
+Cada `SWorld` es un contenedor estanco que gestiona su propio ECS (Entity Component System), motor de físicas e iluminación.
+* Es el encargado de procesar la lógica y enviar los comandos de renderizado a WebGPU.
+* Contiene un nivel principal en memoria llamado **Persistent Level**.
+* Soporta suspensión: Un `SWorld` en segundo plano no consume ciclos de CPU/GPU.
+
+### 2.3 SLevel (La Caja de Datos)
+Es el contenedor puramente de datos que agrupa a los `SActor`s. No tiene físicas ni renderizado propio. Al guardar el juego en el disco, lo que se serializa a JSON es el `SLevel`, no el `SWorld`.
 
 ---
 

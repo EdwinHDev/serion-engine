@@ -20,11 +20,20 @@ Los paneles de la interfaz (Outliner, Details, Viewport) actúan como observador
 
 ## 6. Sincronización de Contexto Multi-Nivel
 
-Para soportar el sistema de pestañas de la UI, `EditorState` no solo rastrea actores, sino también el contexto del mundo activo.
+Para soportar el sistema de pestañas y múltiples niveles simultáneos, el `EditorState` actúa como el enrutador central de todas las acciones del usuario.
 
-### 6.1 Puntero de Mundo Activo
-`EditorState` incluye una propiedad `activeWorldId` (o `activeTabId`). Cuando el usuario hace clic en una pestaña diferente en el `SerionTabManager`:
+### 6.1 Punteros de Jerarquía
+`EditorState` incluye las siguientes referencias críticas:
+* `currentProject`: Instancia de `SProject` que abarca todo el trabajo actual de la sesión.
+* `activeWorld`: El `SWorld` conectado a la pestaña actualmente visible de la UI.
+
+Cuando el usuario hace clic en una pestaña diferente en el `SerionTabManager`:
 1. El UI invoca `EditorState.setActiveWorld(id)`.
 2. `EditorState` dispara el evento `serion:world-changed`.
 3. El `SerionEngine` escucha el evento, pone en suspensión el `SWorld` anterior, y asigna el nuevo `SWorld` al pipeline de renderizado.
-4. El `Outliner` y el `Details Panel` escuchan el evento y purgan su HTML para re-poblarse con los actores del nuevo mundo.
+4. El `Outliner` y el `Details Panel` escuchan el evento, purgan su HTML y se re-pueblan con los actores del nuevo `persistentLevel`.
+
+### 6.2 El Enrutamiento de Acciones (Spawn)
+**Regla Estricta:** Ningún componente de UI (como el Action Toolbar) debe instanciar objetos directamente (ej. `new SActor()`).
+Todo debe despacharse como un evento (`serion:spawn-actor`). El `EditorState` intercepta este evento y lo enruta al mundo vivo correcto utilizando la jerarquía:
+`this.activeWorld.persistentLevel.spawnActor(...)`
