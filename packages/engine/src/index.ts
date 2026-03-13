@@ -10,6 +10,8 @@ export * from './core/SActor';
 export * from './core/EntityManager';
 export * from './core/SWorld';
 export * from './core/InputManager';
+export * from './core/SProject';
+export * from './core/SLevel';
 
 // [CAMERA SYSTEM]
 export * from './camera/SCamera';

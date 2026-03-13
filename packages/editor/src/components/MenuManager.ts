@@ -3,7 +3,7 @@
  * Manages the state of active dropdowns and global interaction.
  */
 
-import { EditorState } from '../core/EditorState';
+import { editorState } from '../core/EditorState';
 import { CommandHistory } from '../core/CommandHistory';
 import { TransformCommand } from '../commands/TransformCommand';
 
@@ -94,7 +94,7 @@ export class MenuManager {
       }
 
       // REGLA 1: Ignorar atajos si la cámara está volando (Clic derecho presionado)
-      if (EditorState.isNavigating) return;
+      if (editorState.isNavigating) return;
 
       // REGLA 2: Ignorar si el usuario está escribiendo en un input, textarea o contenteditable
       const activeEl = document.activeElement;
@@ -123,9 +123,9 @@ export class MenuManager {
 
   public static initializeDefaultShortcuts(): void {
     // Atajos de Transformación (Estándar Unreal)
-    this.registerShortcut('Transform.Select', 'q', () => EditorState.setTransformMode('select'));
-    this.registerShortcut('Transform.Translate', 'w', () => EditorState.setTransformMode('translate'));
-    this.registerShortcut('Transform.Rotate', 'e', () => EditorState.setTransformMode('rotate'));
-    this.registerShortcut('Transform.Scale', 'r', () => EditorState.setTransformMode('scale'));
+    this.registerShortcut('Transform.Select', 'q', () => editorState.setTransformMode('select'));
+    this.registerShortcut('Transform.Translate', 'w', () => editorState.setTransformMode('translate'));
+    this.registerShortcut('Transform.Rotate', 'e', () => editorState.setTransformMode('rotate'));
+    this.registerShortcut('Transform.Scale', 'r', () => editorState.setTransformMode('scale'));
   }
 }

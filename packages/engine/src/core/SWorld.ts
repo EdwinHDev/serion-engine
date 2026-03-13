@@ -1,16 +1,16 @@
 import { EntityManager } from './EntityManager';
 import { SActor } from './SActor';
+import { SLevel } from './SLevel';
 import { Logger } from '../utils/Logger';
 import { AtmosphereSystem } from '../lighting/AtmosphereSystem';
 
 /**
  * SWorld - Contenedor Lógico de la Simulación.
  * Centraliza la gestión de actores y la ejecución de sistemas.
- * Corregido: Implementación real de Grafo de Escena Topológico y Bucle Lineal.
  */
 export class SWorld {
   private entityManager: EntityManager;
-  private actors: Map<number, SActor> = new Map();
+  public persistentLevel: SLevel;
 
   private sceneGraphDirty = false;
   private renderSequence: SActor[] = [];
@@ -21,9 +21,10 @@ export class SWorld {
    */
   constructor(
     public readonly engine: any,
-    maxEntities: number
+    maxEntities: number = 10000
   ) {
     this.entityManager = new EntityManager(maxEntities);
+    this.persistentLevel = new SLevel("PersistentLevel");
   }
 
   /**
@@ -33,7 +34,10 @@ export class SWorld {
     const id = this.entityManager.createEntity();
     const actor = new SActor(id, this);
     actor.name = name || `Actor_${id}`;
-    this.actors.set(actor.id, actor);
+    
+    // El actor se registra en el nivel persistente
+    this.persistentLevel.addActor(actor);
+    
     this.renderSequence.push(actor);
     this.markSceneGraphDirty();
 
@@ -56,7 +60,7 @@ export class SWorld {
 
     // Buscar hijos recursivamente para destrucción en cascada
     const findChildren = (parentId: number) => {
-      for (const other of this.actors.values()) {
+      for (const other of this.persistentLevel.actors.values()) {
         if (other.parentId === parentId) {
           idList.push(other.id);
           findChildren(other.id);
@@ -67,11 +71,11 @@ export class SWorld {
 
     // Destruir todos los actores identificados (de mayor a menor ID para evitar problemas de referencia si fuera necesario)
     for (const id of idList) {
-      const a = this.actors.get(id);
+      const a = this.persistentLevel.actors.get(id);
       if (!a) continue;
 
       this.entityManager.destroyEntity(id);
-      this.actors.delete(id);
+      this.persistentLevel.removeActor(id);
 
       const idx = this.renderSequence.findIndex(x => x.id === id);
       if (idx !== -1) this.renderSequence.splice(idx, 1);
@@ -104,7 +108,7 @@ export class SWorld {
 
       // Si tiene padre, visitar al padre primero (si existe en el mundo)
       if (actor.parentId !== null) {
-        const parent = this.actors.get(actor.parentId);
+        const parent = this.persistentLevel.actors.get(actor.parentId);
         if (parent) visit(parent);
       }
 
@@ -113,7 +117,7 @@ export class SWorld {
     };
 
     // Comenzar el recorrido para todos los actores actuales
-    for (const actor of this.actors.values()) {
+    for (const actor of this.persistentLevel.actors.values()) {
       visit(actor);
     }
 
@@ -170,11 +174,11 @@ export class SWorld {
   }
 
   public getActors(): Map<number, SActor> {
-    return this.actors;
+    return this.persistentLevel.actors;
   }
 
   public shiftOrigin(offsetX: number, offsetY: number, offsetZ: number): void {
-    for (const actor of this.actors.values()) {
+    for (const actor of this.persistentLevel.actors.values()) {
       // ESTÁNDAR AAA: Los hijos NO se desplazan. Su posición es local a su padre.
       // El padre, al ser desplazado globalmente, arrastrará a sus hijos.
       if (actor.parentId !== null) continue;

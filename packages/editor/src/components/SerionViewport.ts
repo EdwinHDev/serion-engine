@@ -1,5 +1,5 @@
 import { SerionEngine, InputManager } from '@serion/engine';
-import { EditorState } from '../core/EditorState';
+import { editorState } from '../core/EditorState';
 
 /**
  * SerionViewport Component
@@ -53,14 +53,14 @@ export class SerionViewport extends HTMLElement {
       
       if (this.isDraggingGizmo && this.engine) {
         let snapE = false; let snapV = 0;
-        if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
-        else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
-        else if (EditorState.transformMode === 'scale') { snapE = EditorState.snapScaleEnabled; snapV = EditorState.snapScaleValue; }
+        if (editorState.transformMode === 'translate') { snapE = editorState.snapTranslationEnabled; snapV = editorState.snapTranslationValue; }
+        else if (editorState.transformMode === 'rotate') { snapE = editorState.snapRotationEnabled; snapV = editorState.snapRotationValue; }
+        else if (editorState.transformMode === 'scale') { snapE = editorState.snapScaleEnabled; snapV = editorState.snapScaleValue; }
 
         this.engine.updateGizmoDrag(ndcX, ndcY, snapE, snapV);
         
         // Mostrar y mover Tooltip si es Rotación
-        if (EditorState.transformMode === 'rotate' && this.engine.getGizmoSystem()) {
+        if (editorState.transformMode === 'rotate' && this.engine.getGizmoSystem()) {
           const gizmo = this.engine.getGizmoSystem()!;
           tooltip.style.display = 'block';
           tooltip.style.left = (e.offsetX + 20) + 'px';
@@ -79,7 +79,7 @@ export class SerionViewport extends HTMLElement {
 
     this.canvas.addEventListener('mousedown', (e) => {
       if (e.button === 2) { // Right Click
-        EditorState.isNavigating = true;
+        editorState.isNavigating = true;
         this.canvas?.requestPointerLock();
       } else if (e.button === 0) { // Left Click
         const ndcX = (e.offsetX / this.canvas!.clientWidth) * 2 - 1; 
@@ -88,9 +88,9 @@ export class SerionViewport extends HTMLElement {
         if (this.engine.isGizmoHovered()) {
           this.isDraggingGizmo = true;
           let snapE = false; let snapV = 0;
-          if (EditorState.transformMode === 'translate') { snapE = EditorState.snapTranslationEnabled; snapV = EditorState.snapTranslationValue; }
-          else if (EditorState.transformMode === 'rotate') { snapE = EditorState.snapRotationEnabled; snapV = EditorState.snapRotationValue; }
-          else if (EditorState.transformMode === 'scale') { snapE = EditorState.snapScaleEnabled; snapV = EditorState.snapScaleValue; }
+          if (editorState.transformMode === 'translate') { snapE = editorState.snapTranslationEnabled; snapV = editorState.snapTranslationValue; }
+          else if (editorState.transformMode === 'rotate') { snapE = editorState.snapRotationEnabled; snapV = editorState.snapRotationValue; }
+          else if (editorState.transformMode === 'scale') { snapE = editorState.snapScaleEnabled; snapV = editorState.snapScaleValue; }
           
           this.engine.beginGizmoDrag(ndcX, ndcY, snapE, snapV);
           return; 
@@ -98,9 +98,9 @@ export class SerionViewport extends HTMLElement {
 
         const hitId = this.engine.pickActor(ndcX, ndcY);
         if (hitId !== null) {
-          EditorState.selectActor(hitId, e.ctrlKey || e.metaKey);
+          editorState.selectActor(hitId, e.ctrlKey || e.metaKey);
         } else {
-          EditorState.clearSelection();
+          editorState.clearSelection();
         }
       }
     });
@@ -109,7 +109,7 @@ export class SerionViewport extends HTMLElement {
       // Si el puntero está bloqueado (navegación), desbloquearlo al soltar el Derecho
       if (e.button === 2) {
         document.exitPointerLock();
-        EditorState.isNavigating = false;
+        editorState.isNavigating = false;
       } else if (e.button === 0 && this.isDraggingGizmo) {
         this.isDraggingGizmo = false;
         const tooltip = this.shadowRoot!.getElementById('gizmo-tooltip') as HTMLDivElement;

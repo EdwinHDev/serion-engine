@@ -1,4 +1,4 @@
-import { EditorState, TransformMode, TransformSpace } from '../core/EditorState';
+import { editorState, TransformMode } from '../core/EditorState';
 
 export class SerionViewportOverlay extends HTMLElement {
   constructor() {
@@ -19,22 +19,22 @@ export class SerionViewportOverlay extends HTMLElement {
     root.querySelectorAll('.tool-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const mode = (e.currentTarget as HTMLElement).dataset.mode as TransformMode;
-        if (mode) EditorState.setTransformMode(mode);
+        if (mode) editorState.setTransformMode(mode);
       });
     });
 
     // 2. Toggle de Espacio (World / Local)
     const spaceBtn = root.querySelector('.space-toggle-btn') as HTMLElement;
     spaceBtn.addEventListener('click', () => {
-      const newSpace = EditorState.transformSpace === 'world' ? 'local' : 'world';
-      EditorState.setTransformSpace(newSpace);
+      const newSpace = editorState.transformSpace === 'world' ? 'local' : 'world';
+      editorState.setTransformSpace(newSpace);
     });
 
     // 3. Toggles de Imanes (Snapping)
     root.querySelectorAll('.snap-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const snap = (e.currentTarget as HTMLElement).dataset.snap as 'translation' | 'rotation' | 'scale';
-        if (snap) EditorState.toggleSnap(snap);
+        if (snap) editorState.toggleSnap(snap);
       });
     });
 
@@ -43,7 +43,7 @@ export class SerionViewportOverlay extends HTMLElement {
       select.addEventListener('change', (e) => {
         const target = e.target as HTMLSelectElement;
         const type = target.dataset.snapType as 'translation' | 'rotation' | 'scale';
-        EditorState.setSnapValue(type, parseFloat(target.value));
+        editorState.setSnapValue(type, parseFloat(target.value));
       });
     });
 
@@ -58,22 +58,22 @@ export class SerionViewportOverlay extends HTMLElement {
     
     // Herramientas
     root.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-    root.querySelector(`.tool-btn[data-mode="${EditorState.transformMode}"]`)?.classList.add('active');
+    root.querySelector(`.tool-btn[data-mode="${editorState.transformMode}"]`)?.classList.add('active');
 
     // Espacio Toggle
     const spaceBtn = root.querySelector('.space-toggle-btn') as HTMLElement;
-    spaceBtn.textContent = EditorState.transformSpace === 'world' ? '🌐' : '📦';
-    spaceBtn.title = EditorState.transformSpace === 'world' ? 'World Space' : 'Local Space';
+    spaceBtn.textContent = editorState.transformSpace === 'world' ? '🌐' : '📦';
+    spaceBtn.title = editorState.transformSpace === 'world' ? 'World Space' : 'Local Space';
 
     // Imanes Activos
-    root.querySelector('.snap-btn[data-snap="translation"]')?.classList.toggle('active', EditorState.snapTranslationEnabled);
-    root.querySelector('.snap-btn[data-snap="rotation"]')?.classList.toggle('active', EditorState.snapRotationEnabled);
-    root.querySelector('.snap-btn[data-snap="scale"]')?.classList.toggle('active', EditorState.snapScaleEnabled);
+    root.querySelector('.snap-btn[data-snap="translation"]')?.classList.toggle('active', editorState.snapTranslationEnabled);
+    root.querySelector('.snap-btn[data-snap="rotation"]')?.classList.toggle('active', editorState.snapRotationEnabled);
+    root.querySelector('.snap-btn[data-snap="scale"]')?.classList.toggle('active', editorState.snapScaleEnabled);
 
     // Valores de Selects
-    (root.querySelector('.snap-select[data-snap-type="translation"]') as HTMLSelectElement).value = EditorState.snapTranslationValue.toString();
-    (root.querySelector('.snap-select[data-snap-type="rotation"]') as HTMLSelectElement).value = EditorState.snapRotationValue.toString();
-    (root.querySelector('.snap-select[data-snap-type="scale"]') as HTMLSelectElement).value = EditorState.snapScaleValue.toString();
+    (root.querySelector('.snap-select[data-snap-type="translation"]') as HTMLSelectElement).value = editorState.snapTranslationValue.toString();
+    (root.querySelector('.snap-select[data-snap-type="rotation"]') as HTMLSelectElement).value = editorState.snapRotationValue.toString();
+    (root.querySelector('.snap-select[data-snap-type="scale"]') as HTMLSelectElement).value = editorState.snapScaleValue.toString();
   }
 
   private render(): void {

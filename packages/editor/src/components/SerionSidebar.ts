@@ -1,4 +1,4 @@
-import { EditorState } from '../core/EditorState';
+import { editorState } from '../core/EditorState';
 import './SerionDetailsPanel';
 import './SerionDetailsPanel';
 
@@ -148,7 +148,7 @@ export class SerionSidebar extends HTMLElement {
           <span class="name">${data.name}</span>
         `;
 
-        element.classList.toggle('selected', EditorState.isActorSelected(data.id));
+        element.classList.toggle('selected', editorState.isActorSelected(data.id));
       } else {
         element.style.display = 'none';
       }
@@ -158,7 +158,7 @@ export class SerionSidebar extends HTMLElement {
   private syncSelection() {
     this.itemPool.forEach(el => {
       const id = parseInt(el.dataset.id || '-1');
-      el.classList.toggle('selected', EditorState.isActorSelected(id));
+      el.classList.toggle('selected', editorState.isActorSelected(id));
     });
   }
 
@@ -295,7 +295,7 @@ export class SerionSidebar extends HTMLElement {
         div.className = 'outliner-item';
         div.addEventListener('click', (e) => {
           const id = parseInt(div.dataset.id || '-1');
-          EditorState.selectActor(id, e.ctrlKey || e.metaKey);
+          editorState.selectActor(id, e.ctrlKey || e.metaKey);
         });
         div.addEventListener('mousedown', (e) => {
           const target = e.target as HTMLElement;
