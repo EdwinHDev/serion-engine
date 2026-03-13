@@ -94,7 +94,10 @@ export class SerionToolbar extends HTMLElement {
             { label: 'Shapes', submenu: [
                 { label: 'Cube', action: 'spawn:cube' },
                 { label: 'Sphere', action: 'spawn:sphere' },
-                { label: 'Plane', action: 'spawn:plane' }
+                { label: 'Plane', action: 'spawn:plane' },
+                { label: 'Cylinder', action: 'spawn:cylinder' },
+                { label: 'Cone', action: 'spawn:cone' },
+                { label: 'Capsule', action: 'spawn:capsule' }
             ]},
             { label: 'Lights', submenu: [
                 { label: 'Directional Light', action: 'spawn:dir-light' },

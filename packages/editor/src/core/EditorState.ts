@@ -61,11 +61,14 @@ export class EditorState {
       return;
     }
 
-    // Mapeo amigable para el nombre del actor
+    // Mapeo amigable para el nombre del actor ampliado
     const nameMap: Record<string, string> = {
       'cube': 'Cube',
       'sphere': 'Sphere',
       'plane': 'Plane',
+      'cylinder': 'Cylinder',
+      'cone': 'Cone',
+      'capsule': 'Capsule',
       'empty': 'Empty Actor',
       'dir-light': 'Directional Light',
       'point-light': 'Point Light'
@@ -76,8 +79,10 @@ export class EditorState {
     // 1. Instanciar en el mundo vivo
     const newActor = this.activeWorld.spawnActor(actorName);
 
-    // 2. Asignar componentes según el tipo
-    if (type === 'cube' || type === 'sphere' || type === 'plane') {
+    // 2. Asignar componentes según el tipo (Refactorizado para ser dinámico)
+    const primitiveTypes = ['cube', 'sphere', 'plane', 'cylinder', 'cone', 'capsule'];
+    
+    if (primitiveTypes.includes(type)) {
       const meshId = `Primitive_${type.charAt(0).toUpperCase() + type.slice(1)}`;
       const mesh = this.activeWorld.engine.geometryRegistry.getMesh(meshId);
       if (mesh) {
