@@ -135,19 +135,9 @@ export class SerionEngine {
         }) as EventListener);
       }
 
-      // Showcase Camera
-      const cameraActor = this.activeWorld.spawnActor('Camera');
-      cameraActor.setPosition(367, -350, 120);
-
-      const mainCamera = new SCamera(cameraActor);
-      mainCamera.pitch = -10.0;
-      mainCamera.yaw = 132.0;
-
-      this.cameraManager.setActiveCamera(mainCamera);
-      this.freeCameraController = new FreeCameraController(mainCamera);
-
       // --- ESCENA SHOWCASE PBR (Centralizada en SceneBuilder) ---
-      SceneBuilder.buildShowcase(this.activeWorld);
+      // Delegamos la creación de TODOS los actores de la escena al SceneBuilder
+      this.freeCameraController = SceneBuilder.buildShowcase(this);
 
       this.isRunning = true;
       this.lastTime = performance.now();

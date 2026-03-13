@@ -65,6 +65,30 @@ export class SActor {
     this.world.engine.transformPool.setRotation(this.id, x, y, z, w);
   }
 
+  /**
+   * Establece la rotación usando ángulos de Euler (grados).
+   * Estándar Serion: Pitch (Y), Yaw (Z), Roll (X).
+   */
+  public setRotationEuler(pitch: number, yaw: number, roll: number): void {
+    const p = (pitch * Math.PI) / 180 / 2;
+    const y = (yaw * Math.PI) / 180 / 2;
+    const r = (roll * Math.PI) / 180 / 2;
+
+    const cp = Math.cos(p);
+    const sp = Math.sin(p);
+    const cy = Math.cos(y);
+    const sy = Math.sin(y);
+    const cr = Math.cos(r);
+    const sr = Math.sin(r);
+
+    const qx = sr * cp * cy - cr * sp * sy;
+    const qy = cr * sp * cy + sr * cp * sy;
+    const qz = cr * cp * sy - sr * sp * sy;
+    const qw = cr * cp * cy + sr * sp * sy;
+
+    this.setRotation(qx, qy, qz, qw);
+  }
+
   // --- ACCESSORS DE ESCALA ---
 
   public get scaleX(): number { return this.world.engine.transformPool.getScaleX(this.id); }
