@@ -58,7 +58,7 @@ fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
     if (depth >= 1.0) { return vec4<f32>(1.0); }
 
     var occlusion = 0.0;
-    let radius = 25.0; 
+    let radius = 40.0; // FIX: Radio ampliado (40cm) para oclusión de contacto más visible
     let samples = 16.0;
     
     var up = vec3<f32>(0.0, 0.0, 1.0);
@@ -76,8 +76,9 @@ fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
         
         let sampleDir = tbn * vec3<f32>(r * cos(theta), r * sin(theta), sqrt(max(0.0, 1.0 - r*r)));
         
-        // Bias físico (3.0) para evitar acné
-        let samplePos = worldPos + (worldNormal * 3.0) + (sampleDir * radius);
+        // FIX: Bias reducido (1.0 vs 3.0) para que las muestras estén más cerca de la superficie
+        // Esto captura mejor la oclusión en las zonas de contacto (cubo-plano)
+        let samplePos = worldPos + (worldNormal * 1.0) + (sampleDir * radius);
         let clipPos = env.viewProjectionMatrix * vec4<f32>(samplePos, 1.0);
         if (clipPos.w <= 0.01) { continue; }
 
@@ -92,14 +93,15 @@ fn inverse(m: mat4x4<f32>) -> mat4x4<f32> {
                 let sUnp = invVP * sNdc;
                 let sceneWorldPos = sUnp.xyz / sUnp.w;
                 
-                // Falloff Físico: Ignorar colisiones que están absurdamente lejos detrás del objeto
+                // Falloff Físico
                 let dist = length(worldPos - sceneWorldPos);
                 let rangeCheck = smoothstep(0.0, 1.0, radius / max(dist, 0.001));
                 occlusion += 1.0 * rangeCheck;
             }
         }
     }
-    let aoFinal = pow(max(0.0, 1.0 - (occlusion / samples)), 1.5);
+    // FIX: Curva más suave (1.2 vs 1.5) para un gradiente natural en vez de línea dura
+    let aoFinal = pow(max(0.0, 1.0 - (occlusion / samples)), 1.2);
     return vec4<f32>(aoFinal, aoFinal, aoFinal, 1.0);
 }
 `;

@@ -83,24 +83,25 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
-fn calculateShadow(shadowMap: texture_depth_2d, shadowPos: vec3<f32>) -> f32 {
-    let inBoundsX = step(0.0, shadowPos.x) * step(shadowPos.x, 1.0);
-    let inBoundsY = step(0.0, shadowPos.y) * step(shadowPos.y, 1.0);
-    let inBoundsZ = step(0.0, shadowPos.z) * step(shadowPos.z, 1.0);
-    let inBounds = inBoundsX * inBoundsY * inBoundsZ;
+fn calculateShadow(shadowMap: texture_depth_2d, shadowPos: vec3<f32>, nDotL: f32) -> f32 {
+    let inBounds = step(0.0, shadowPos.x) * step(shadowPos.x, 1.0) * step(0.0, shadowPos.y) * step(shadowPos.y, 1.0) * step(0.0, shadowPos.z) * step(shadowPos.z, 1.0);
 
-    var visibility = 0.0;
-    let size = 1.0 / 2048.0;
+    // Micro-Bias (hardware depthBias ya maneja la mayor parte del acne)
+    let bias = max(0.0001 * (1.0 - nDotL), 0.000005);
     
-    for (var y = -1; y <= 1; y++) {
-        for (var x = -1; x <= 1; x++) {
-            let offset = vec2<f32>(f32(x), f32(y)) * size;
-            visibility += textureSampleCompare(shadowMap, shadowSampler, shadowPos.xy + offset, shadowPos.z - 0.0005);
+    var visibility = 0.0;
+    // FIX: Spread muy amplio (5.0 texeles) para crear una penumbra suave y gradual
+    // Esto diluye completamente los bordes dentados en una transición de ~20 texeles
+    let size = 5.0 / 2048.0;
+
+    // PCF 4x4 Regular (sin rotación = sin ruido visual)
+    for (var y = -1.5; y <= 1.5; y += 1.0) {
+        for (var x = -1.5; x <= 1.5; x += 1.0) {
+            visibility += textureSampleCompare(shadowMap, shadowSampler, shadowPos.xy + vec2<f32>(x, y) * size, shadowPos.z - bias);
         }
     }
     
-    visibility /= 9.0;
-    return mix(1.0, visibility, inBounds);
+    return mix(1.0, visibility / 16.0, inBounds);
 }
 
 const PI: f32 = 3.14159265359;
@@ -149,18 +150,15 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var F0: vec3<f32> = vec3<f32>(0.04);
     F0 = mix(F0, albedo.rgb, metallic);
 
-    // 2. Cascaded Shadow Maps (Branchless)
-    let shadow0 = calculateShadow(shadowMap0, input.shadowPos0);
-    let shadow1 = calculateShadow(shadowMap1, input.shadowPos1);
-    let useCascade1 = step(env.cascadeSplits.x, input.viewZ);
-    let visibility = mix(shadow0, shadow1, useCascade1);
-
-    // 3. Luz Directa (Cook-Torrance BRDF)
+    // 2. Luz Directa (Cook-Torrance BRDF)
     var Lo: vec3<f32> = vec3<f32>(0.0);
 
     let L: vec3<f32> = normalize(-env.sunDirection_Intensity.xyz);
     let H: vec3<f32> = normalize(V + L);
     let NdotL: f32 = max(dot(N, L), 0.0);
+
+    // SOMBRAS (PCF 4x4 con penumbra amplia)
+    let shadow = mix(calculateShadow(shadowMap0, input.shadowPos0, NdotL), calculateShadow(shadowMap1, input.shadowPos1, NdotL), step(env.cascadeSplits.x, input.viewZ));
 
     let lightColor: vec3<f32> = env.sunColor_AmbientInt.rgb;
     let lightIntensity: f32 = env.sunDirection_Intensity.w;
@@ -179,8 +177,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var kD: vec3<f32> = vec3<f32>(1.0) - kS;
     kD = kD * (1.0 - metallic);
 
-    // La sombra (visibility) afecta a toda la radiancia saliente
-    let directLight: vec3<f32> = (kD * albedo.rgb / PI + specular) * radiance * NdotL * visibility;
+    // La sombra (shadow) afecta a toda la radiancia saliente
+    let directLight: vec3<f32> = (kD * albedo.rgb / PI + specular) * radiance * NdotL * shadow;
     Lo = Lo + directLight;
 
     // LUZ AMBIENTAL Y REFLEJOS DEL CIELO (Analytical IBL & SSAO Físico)
