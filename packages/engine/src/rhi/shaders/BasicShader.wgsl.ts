@@ -183,21 +183,44 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let directLight: vec3<f32> = (kD * albedo.rgb / PI + specular) * radiance * NdotL * visibility;
     Lo = Lo + directLight;
 
-    // 4. Luz Ambiental Hemisférica y SSAO Físico
+    // LUZ AMBIENTAL Y REFLEJOS DEL CIELO (Analytical IBL & SSAO Físico)
     let screenCoord = vec2<i32>(input.position.xy);
     let ao = textureLoad(ssaoMap, screenCoord, 0).r;
 
-    let up = N.z * 0.5 + 0.5;
-    let ambientIrradiance = mix(env.groundColor.rgb, env.skyColor.rgb, up) * env.sunColor_AmbientInt.w;
+    // 1. Irradiancia Difusa Analítica (Luz que rebota del cielo)
+    // El cielo es más brillante cerca de la dirección del Sol (Dispersión de Rayleigh simulada)
+    let skyIntensity = env.sunColor_AmbientInt.w;
+    let skyGradient = mix(env.groundColor.rgb, env.skyColor.rgb, clamp(N.z * 0.5 + 0.5, 0.0, 1.0));
+    
+    // Simular el brillo direccional de la atmósfera
+    let sunScatter = max(dot(N, L), 0.0) * 0.5 + 0.5; 
+    let ambientIrradiance = skyGradient * sunScatter * skyIntensity;
     let ambientDiffuse = albedo.rgb * (1.0 - metallic) * ambientIrradiance;
 
+    // 2. Especular Ambiental Analítico (Reflejos del entorno)
     let R = reflect(-V, N);
-    let reflMix = R.z * 0.5 + 0.5;
-    let ambientRefl = mix(env.groundColor.rgb, env.skyColor.rgb, reflMix) * env.sunColor_AmbientInt.w;
-    let ambientSpecular = F0 * ambientRefl * (1.0 - roughness);
+    let RdotL = max(dot(R, L), 0.0);
+    
+    // El cielo reflejado depende de hacia dónde mira el rayo rebotado
+    let skyReflColor = mix(env.groundColor.rgb, env.skyColor.rgb, clamp(R.z * 0.5 + 0.5, 0.0, 1.0));
+    
+    // Fake Sun Specular Glow (El resplandor del sol reflejado en la atmósfera)
+    // Se difumina físicamente basado en el roughness del material
+    let glowPower = mix(256.0, 16.0, roughness);
+    let sunGlow = pow(RdotL, glowPower) * env.sunColor_AmbientInt.rgb * (1.0 - roughness) * 0.5;
+    
+    let ambientRefl = skyReflColor + sunGlow;
+    
+    // Función de Fresnel Ambiental (Schlick aproximada con Roughness)
+    let NdotV_env = max(dot(N, V), 0.0);
+    let envFresnel = F0 + (max(vec3<f32>(1.0 - roughness), F0) - F0) * pow(1.0 - NdotV_env, 5.0);
+    
+    let ambientSpecular = ambientRefl * envFresnel * skyIntensity;
 
-    // El SSAO *únicamente* oscurece la luz ambiental (indirecta)
+    // 3. Aplicación de Oclusión (El SSAO solo ahoga la luz indirecta)
     let ambient: vec3<f32> = (ambientDiffuse + ambientSpecular) * ao;
+
+    // RESULTADO FÍSICO FINAL
     var finalColor: vec3<f32> = ambient + Lo;
 
     // 5. ACES Filmic Tone Mapping
