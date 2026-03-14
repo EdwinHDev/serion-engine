@@ -4,8 +4,8 @@
  */
 export class SAtmosphereComponent {
   // Coeficientes de dispersión (Representan el color y densidad de la atmósfera)
-  public rayleighScattering = new Float32Array([0.0025, 0.0060, 0.0140]);
-  public mieScattering = 0.0010;
+  public rayleighScattering = new Float32Array([3.8e-6, 13.5e-6, 33.1e-6]);
+  public mieScattering = 3.9e-6;
 
   // Escala Planetaria (metros)
   public planetRadius = 6360000.0;

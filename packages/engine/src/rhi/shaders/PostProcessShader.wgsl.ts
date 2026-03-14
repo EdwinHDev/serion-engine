@@ -59,9 +59,14 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     // Solo procesamos el mundo, ignoramos el outline
     let colorWithFlares = finalHdrColor + (lensFlareColor * 0.5);
 
-    // ACES Filmic Tone Mapping
+    // FIX ÓPTICO: Control de Exposición (Camera Aperture)
+    // Valores menores a 1.0 reducen el quemado bajo la luz solar directa
+    let exposure = 0.75; 
+    let exposedColor = colorWithFlares * exposure;
+
+    // ACES Filmic Tone Mapping (Ahora recibe luz controlada)
     let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
-    let mapped = clamp((colorWithFlares * (a * colorWithFlares + b)) / (colorWithFlares * (c * colorWithFlares + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+    let mapped = clamp((exposedColor * (a * exposedColor + b)) / (exposedColor * (c * exposedColor + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 
     let gammaCorrected = pow(mapped, vec3<f32>(0.454545));
 
