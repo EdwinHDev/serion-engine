@@ -239,38 +239,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
 @vertex
 fn shadow_vs_main_c0(input: VertexInput) -> @builtin(position) vec4<f32> {
-    let modelMatrix = mat4x4<f32>(
-        input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3
-    );
-    let normalMatrix = mat4x4<f32>(
-        input.normalMatrixR0, input.normalMatrixR1, input.normalMatrixR2, input.normalMatrixR3
-    );
-    
+    let modelMatrix = mat4x4<f32>(input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3);
     let worldPos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
-    let worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
-    
-    // Dynamic Normal Offset Bias (0.15 unidades físicas)
-    let biasedWorldPos = worldPos + (worldNormal * 0.15);
-    
-    return env.lightViewProj0 * vec4<f32>(biasedWorldPos, 1.0);
+    // FIX: Eliminar el Normal Offset (+ worldNormal * 0.15) que explotaba la geometría rígida
+    return env.lightViewProj0 * vec4<f32>(worldPos, 1.0);
 }
-
 @vertex
 fn shadow_vs_main_c1(input: VertexInput) -> @builtin(position) vec4<f32> {
-    let modelMatrix = mat4x4<f32>(
-        input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3
-    );
-    let normalMatrix = mat4x4<f32>(
-        input.normalMatrixR0, input.normalMatrixR1, input.normalMatrixR2, input.normalMatrixR3
-    );
-    
+    let modelMatrix = mat4x4<f32>(input.modelMatrixR0, input.modelMatrixR1, input.modelMatrixR2, input.modelMatrixR3);
     let worldPos = (modelMatrix * vec4<f32>(input.position, 1.0)).xyz;
-    let worldNormal = normalize((normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
-    
-    // Dynamic Normal Offset Bias (0.15 unidades físicas)
-    let biasedWorldPos = worldPos + (worldNormal * 0.15);
-    
-    return env.lightViewProj1 * vec4<f32>(biasedWorldPos, 1.0);
+    // FIX: Eliminar el Normal Offset
+    return env.lightViewProj1 * vec4<f32>(worldPos, 1.0);
 }
 
 @fragment

@@ -34,13 +34,12 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
     let lensFlareColor = textureSample(lensFlareTexture, texSampler, input.uv).rgb;
 
-    // Composición HDR + Bloom (SSAO ya aplicado en el Forward Pass)
     let finalHdrColor = hdrColor + (bloomColor * 1.2);
     
     // AAA Outline Edge Detection
     let texSize = vec2<f32>(textureDimensions(selectionTexture));
     let texel = 1.0 / texSize;
-    let thickness = 2.0; // Grosor del borde en píxeles
+    let thickness = 2.0;
     
     let cMask = textureSample(selectionTexture, texSampler, input.uv).r;
     var edge = 0.0;
@@ -48,26 +47,27 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, 0.0)).r;
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(0.0, texel.y * thickness)).r;
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(0.0, -texel.y * thickness)).r;
-    
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, texel.y * thickness)).r;
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, -texel.y * thickness)).r;
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, -texel.y * thickness)).r;
     edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, texel.y * thickness)).r;
     
-    // Solo dibujamos en el exterior del objeto
     let isOutline = max(0.0, clamp(edge, 0.0, 1.0) - cMask);
+    // El color de selección puro que queremos
+    let outlineColor = vec3<f32>(1.0, 0.6, 0.0) * isOutline * 2.5; 
     
-    // Color del borde (Amarillo/Naranja Unreal Engine) multiplicando por 5.0 para que emita luz
-    let outlineColor = vec3<f32>(1.0, 0.6, 0.0) * isOutline * 5.0;
-    
-    // Inyectamos el borde sobre la composición
-    let hdrWithOutline = finalHdrColor + outlineColor;
-    let colorWithFlares = hdrWithOutline + (lensFlareColor * 0.5);
+    // Solo procesamos el mundo, ignoramos el outline
+    let colorWithFlares = finalHdrColor + (lensFlareColor * 0.5);
 
-    // ACES Filmic
+    // ACES Filmic Tone Mapping
     let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
     let mapped = clamp((colorWithFlares * (a * colorWithFlares + b)) / (colorWithFlares * (c * colorWithFlares + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 
-    return vec4<f32>(pow(mapped, vec3<f32>(0.454545)), 1.0);
+    let gammaCorrected = pow(mapped, vec3<f32>(0.454545));
+
+    // FIX AAA: Sumar el borde de selección al final de toda la óptica
+    let finalOutput = gammaCorrected + outlineColor;
+
+    return vec4<f32>(finalOutput, 1.0);
 }
 `;

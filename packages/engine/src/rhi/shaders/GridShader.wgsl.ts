@@ -68,41 +68,40 @@ fn fs_main(input: VertexOutput) -> FragmentOutput {
     
     // 1. Sub-cuadrícula fina (10 unidades = 10 cm)
     let grid10 = abs(fract(coord / 10.0 - 0.5) - 0.5) / (derivative / 10.0);
-    let line10 = 1.0 - min(min(grid10.x, grid10.y), 1.0);
+    let line10 = 1.0 - min(min(grid10.x, grid10.y) * 2.0, 1.0);
 
     // 2. Cuadrícula principal (100 unidades = 1 metro)
     let grid100 = abs(fract(coord / 100.0 - 0.5) - 0.5) / (derivative / 100.0);
-    let line100 = 1.0 - min(min(grid100.x, grid100.y), 1.0);
+    let line100 = 1.0 - min(min(grid100.x, grid100.y) * 2.0, 1.0);
     
     // Colores base de la cuadrícula
-    var color = vec3<f32>(0.15); // Fondo casi transparente
+    var color = vec3<f32>(0.15);
     var alpha = 0.0;
     
     // Mezclamos las líneas de las cuadrículas
-    alpha = mix(alpha, 0.15, line10);        // Líneas tenues cada 10cm
-    alpha = mix(alpha, 0.50, line100);       // Líneas fuertes cada 1m
+    alpha = mix(alpha, 0.15, line10);
+    alpha = mix(alpha, 0.50, line100);
     color = mix(color, vec3<f32>(0.5), line100);
     
-    // 3. Ejes principales (X Rojo, Y Verde)
-    let axisThickness = derivative * 1.5;
-    let axisX = 1.0 - min(abs(worldPos.y) / axisThickness.y, 1.0); // Eje X (y=0)
-    let axisY = 1.0 - min(abs(worldPos.x) / axisThickness.x, 1.0); // Eje Y (x=0)
+    // 3. Ejes principales - FIX: Usar el mismo threshold rígido que la cuadrícula
+    let axisX = abs(worldPos.y) / derivative.y; // Eje X (y=0)
+    let axisY = abs(worldPos.x) / derivative.x; // Eje Y (x=0)
     
     // Resaltamos el Eje X (Adelante/Atrás) - Rojo
-    if (axisX > 0.0) {
-        color = mix(color, vec3<f32>(0.9, 0.2, 0.2), axisX);
-        alpha = max(alpha, axisX * 0.9);
+    if (axisX < 0.5) {
+        color = vec3<f32>(0.9, 0.2, 0.2);
+        alpha = 0.9;
     }
     
     // Resaltamos el Eje Y (Izquierda/Derecha) - Verde
-    if (axisY > 0.0) {
-        color = mix(color, vec3<f32>(0.2, 0.9, 0.2), axisY);
-        alpha = max(alpha, axisY * 0.9);
+    if (axisY < 0.5) {
+        color = vec3<f32>(0.2, 0.9, 0.2);
+        alpha = 0.9;
     }
 
     // 4. Desvanecimiento radial en la distancia
     let dist = length(worldPos.xy - env.cameraPosition.xy);
-    let fade = 1.0 - clamp(dist / 30000.0, 0.0, 1.0); // Visible hasta 300 metros
+    let fade = 1.0 - clamp(dist / 30000.0, 0.0, 1.0);
     alpha = alpha * fade;
     
     if (alpha <= 0.01) { discard; }
