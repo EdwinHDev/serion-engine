@@ -1,4 +1,4 @@
-import { SWorld, SProject, SStaticMeshComponent, SerionEngine } from '@serion/engine';
+import { SWorld, SProject, SStaticMeshComponent, SMaterialComponent, SerionEngine } from '@serion/engine';
 
 export type TransformMode = 'select' | 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
@@ -87,6 +87,7 @@ export class EditorState {
       const mesh = this.activeWorld.engine.geometryRegistry.getMesh(meshId);
       if (mesh) {
         newActor.staticMesh = new SStaticMeshComponent(meshId);
+        newActor.material = new SMaterialComponent();
         newActor.setScale(100, 100, 100); // Escala AAA por defecto (1 metro)
       }
     } else if (type === 'dir-light') {
