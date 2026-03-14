@@ -30,9 +30,9 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(4) var selectionTexture: texture_2d<f32>;
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let hdrColor = textureSample(sceneTexture, texSampler, input.uv).rgb;
-    let bloomColor = textureSample(bloomTexture, texSampler, input.uv).rgb;
-    let lensFlareColor = textureSample(lensFlareTexture, texSampler, input.uv).rgb;
+    let hdrColor = textureSampleLevel(sceneTexture, texSampler, input.uv, 0.0).rgb;
+    let bloomColor = textureSampleLevel(bloomTexture, texSampler, input.uv, 0.0).rgb;
+    let lensFlareColor = textureSampleLevel(lensFlareTexture, texSampler, input.uv, 0.0).rgb;
 
     let finalHdrColor = hdrColor + (bloomColor * 1.2);
     
@@ -41,16 +41,16 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     let texel = 1.0 / texSize;
     let thickness = 2.0;
     
-    let cMask = textureSample(selectionTexture, texSampler, input.uv).r;
+    let cMask = textureSampleLevel(selectionTexture, texSampler, input.uv, 0.0).r;
     var edge = 0.0;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, 0.0)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, 0.0)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(0.0, texel.y * thickness)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(0.0, -texel.y * thickness)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, texel.y * thickness)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, -texel.y * thickness)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, -texel.y * thickness)).r;
-    edge += textureSample(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, texel.y * thickness)).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, 0.0), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, 0.0), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(0.0, texel.y * thickness), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(0.0, -texel.y * thickness), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, texel.y * thickness), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, -texel.y * thickness), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(texel.x * thickness, -texel.y * thickness), 0.0).r;
+    edge += textureSampleLevel(selectionTexture, texSampler, input.uv + vec2(-texel.x * thickness, texel.y * thickness), 0.0).r;
     
     let isOutline = max(0.0, clamp(edge, 0.0, 1.0) - cMask);
     // El color de selección puro que queremos
@@ -73,6 +73,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     // FIX AAA: Sumar el borde de selección al final de toda la óptica
     let finalOutput = gammaCorrected + outlineColor;
 
-    return vec4<f32>(finalOutput, 1.0);
+    // Luminancia en Alpha para FXAA
+    let luma = dot(finalOutput, vec3<f32>(0.299, 0.587, 0.114));
+    return vec4<f32>(finalOutput, luma);
 }
 `;

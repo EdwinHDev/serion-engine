@@ -8,6 +8,7 @@ import { SSAOShaderWGSL } from './shaders/SSAOShader.wgsl';
 import { SSAOBlurShaderWGSL } from './shaders/SSAOBlurShader.wgsl';
 import { LensFlareShaderWGSL } from './shaders/LensFlareShader.wgsl';
 import { GizmoShaderWGSL } from './shaders/GizmoShader.wgsl';
+import { FXAAShaderWGSL } from './shaders/FXAAShader.wgsl';
 import { SStaticMesh } from '../geometry/SStaticMesh';
 import { SGlobalEnvironmentData } from '../core/SGlobalEnvironmentData';
 
@@ -113,6 +114,12 @@ export class SerionRHI {
   private gizmoPipeline: GPURenderPipeline | null = null;
   private gizmoLayout: GPUBindGroupLayout | null = null;
 
+  // FXAA Resources
+  private fxaaSourceTexture: GPUTexture | null = null;
+  private fxaaSourceTextureView: GPUTextureView | null = null;
+  private fxaaPipeline: GPURenderPipeline | null = null;
+  private fxaaBindGroup: GPUBindGroup | null = null;
+  private fxaaLayout: GPUBindGroupLayout | null = null;
 
 
 
@@ -208,6 +215,13 @@ export class SerionRHI {
     this.gizmoLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+      ]
+    });
+
+    this.fxaaLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
 
@@ -407,7 +421,17 @@ export class SerionRHI {
       primitive: { topology: 'triangle-strip' }
     });
 
-    // 7. Gizmo Pipeline
+    // 7. FXAA Pipeline
+    const fxaaShaderModule = this.device.createShaderModule({ code: FXAAShaderWGSL });
+    const fxaaPipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [this.fxaaLayout!] });
+    this.fxaaPipeline = this.device.createRenderPipeline({
+      layout: fxaaPipelineLayout,
+      vertex: { module: fxaaShaderModule, entryPoint: 'vs_main' },
+      fragment: { module: fxaaShaderModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-strip' }
+    });
+
+    // 8. Gizmo Pipeline
     this.gizmoPipeline = this.device.createRenderPipeline({
       layout: this.device.createPipelineLayout({ bindGroupLayouts: [envLayout, this.gizmoLayout!] }),
       vertex: {
@@ -589,6 +613,15 @@ export class SerionRHI {
       ]
     });
 
+    // FXAA Source Texture (Intermedia entre Post-Process y Swapchain)
+    if (this.fxaaSourceTexture) this.fxaaSourceTexture.destroy();
+    this.fxaaSourceTexture = this.device!.createTexture({
+      size: [width, height],
+      format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.fxaaSourceTextureView = this.fxaaSourceTexture.createView();
+
     // BindGroup del Post-Procesado (SSAO ya aplicado en el Forward Pass)
     this.postProcessBindGroup = this.device!.createBindGroup({
       layout: this.postProcessLayout!,
@@ -598,6 +631,15 @@ export class SerionRHI {
         { binding: 2, resource: this.bloomMipViews[0] },
         { binding: 3, resource: this.lensFlareTextureView! },
         { binding: 4, resource: this.selectionTextureView! }
+      ]
+    });
+
+    // BindGroup FXAA (Lee de la textura intermedia post-tonemapped)
+    this.fxaaBindGroup = this.device!.createBindGroup({
+      layout: this.fxaaLayout!,
+      entries: [
+        { binding: 0, resource: this.linearSampler! },
+        { binding: 1, resource: this.fxaaSourceTextureView! }
       ]
     });
 
@@ -831,10 +873,10 @@ export class SerionRHI {
     lensPass.draw(4, 1, 0, 0);
     lensPass.end();
 
-    // 4. PASE FINAL (Post-Process + Merge Bloom + Merge Lens Flares)
+    // 4. PASE POST-PROCESS (Tonemapping + Bloom + Lens Flares -> Textura Intermedia FXAA)
     const postProcessPass = encoder.beginRenderPass({
       colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
+        view: this.fxaaSourceTextureView!,
         loadOp: 'clear',
         clearValue: { r: 0, g: 0, b: 0, a: 1 },
         storeOp: 'store'
@@ -844,6 +886,20 @@ export class SerionRHI {
     postProcessPass.setBindGroup(0, this.postProcessBindGroup!);
     postProcessPass.draw(4, 1, 0, 0);
     postProcessPass.end();
+
+    // 4.1 PASE FXAA (Anti-Aliasing -> Swapchain)
+    const fxaaPass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.context.getCurrentTexture().createView(),
+        loadOp: 'clear',
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        storeOp: 'store'
+      }]
+    });
+    fxaaPass.setPipeline(this.fxaaPipeline!);
+    fxaaPass.setBindGroup(0, this.fxaaBindGroup!);
+    fxaaPass.draw(4, 1, 0, 0);
+    fxaaPass.end();
 
     // 4.5. GRID OVERLAY PASS (Inmune a luces, SSAO y Post-Procesos)
     if (this.gridPipeline) {
